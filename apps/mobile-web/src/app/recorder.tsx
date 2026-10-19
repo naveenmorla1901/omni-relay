@@ -204,7 +204,7 @@ function RecorderWorkspace() {
                   </Pressable>
                 </View>
                 <ThemedText type="small" themeColor="textSecondary">
-                  Open Admin on your other device and tap "Create session" to get the code.
+                  Open Admin on your other device and tap &ldquo;Create session&rdquo; to get the code.
                 </ThemedText>
               </>
             )}

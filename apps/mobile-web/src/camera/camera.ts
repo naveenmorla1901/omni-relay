@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { mediaDevices } from 'react-native-webrtc';
 
 import { CONFIG } from '@/config';

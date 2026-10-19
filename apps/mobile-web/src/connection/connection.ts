@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Native WebRTC implementation using react-native-webrtc.
  * The API mirrors the browser's RTCPeerConnection closely enough that most of

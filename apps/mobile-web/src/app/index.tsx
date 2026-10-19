@@ -123,7 +123,7 @@ export default function RolePickerScreen() {
             <View style={styles.footerCopy}>
               <ThemedText type="smallBold">Pairing</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
-                Open Admin, tap "Create session" for a 6-char code, then enter it in Recorder or Projector.
+                Open Admin, tap &ldquo;Create session&rdquo; for a 6-char code, then enter it in Recorder or Projector.
               </ThemedText>
             </View>
             <Link href="/pair" asChild>

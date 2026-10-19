@@ -15,8 +15,8 @@ export type SignalMsg =
 
 export class SignalClient {
   private ws: WebSocket | null = null;
-  private msgHandlers: Array<(msg: SignalMsg) => void> = [];
-  private closeHandlers: Array<() => void> = [];
+  private msgHandlers: ((msg: SignalMsg) => void)[] = [];
+  private closeHandlers: (() => void)[] = [];
 
   async connect(url: string): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -25,7 +25,7 @@ export class SignalClient {
         if (settled) return;
         settled = true;
         clearTimeout(timer);
-        err ? reject(err) : resolve();
+        if (err) { reject(err); } else { resolve(); }
       };
 
       const timer = setTimeout(() => {
