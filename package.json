@@ -1,0 +1,24 @@
+{
+  "name": "clearrelay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Serverless, peer-to-peer screen relay for sharp text and code.",
+  "workspaces": [
+    "apps/*",
+    "services/*"
+  ],
+  "scripts": {
+    "start": "npm run start -w @clearrelay/mobile-web",
+    "web": "npm run web -w @clearrelay/mobile-web",
+    "android": "npm run android -w @clearrelay/mobile-web",
+    "ios": "npm run ios -w @clearrelay/mobile-web",
+    "lint": "npm run lint -w @clearrelay/mobile-web",
+    "typecheck": "npm run typecheck -w @clearrelay/mobile-web",
+    "test": "npm run test -w @clearrelay/mobile-web",
+    "test:watch": "npm run test:watch -w @clearrelay/mobile-web",
+    "export:web": "npm run export:web -w @clearrelay/mobile-web"
+  },
+  "engines": {
+    "node": "^22.13.0 || ^24.3.0 || >=26.0.0"
+  }
+}
