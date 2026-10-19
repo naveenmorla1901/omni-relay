@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 
-import { ACCESS_KEYS } from '@/config';
+import { ACCESS_KEY, ACCESS_KEYS } from '@/config';
 import { useSessionStore } from '@/store/session';
 
 describe('session access gate', () => {
@@ -8,11 +8,9 @@ describe('session access gate', () => {
     useSessionStore.getState().reset();
   });
 
-  it('unlocks with a configured key', () => {
-    const key = ACCESS_KEYS[0];
-
-    expect(key).toBeTruthy();
-    expect(useSessionStore.getState().unlockWithKey(key)).toBe(true);
+  it('unlocks with the built-in key', () => {
+    expect(ACCESS_KEYS).toContain(ACCESS_KEY);
+    expect(useSessionStore.getState().unlockWithKey(ACCESS_KEY)).toBe(true);
     expect(useSessionStore.getState().isUnlocked).toBe(true);
   });
 
@@ -22,7 +20,7 @@ describe('session access gate', () => {
   });
 
   it('lock clears access and the active role', () => {
-    useSessionStore.getState().unlockWithKey(ACCESS_KEYS[0]);
+    useSessionStore.getState().unlockWithKey(ACCESS_KEY);
     useSessionStore.getState().setActiveRole('recorder');
     useSessionStore.getState().lock();
 

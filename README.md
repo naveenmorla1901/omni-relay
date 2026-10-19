@@ -18,11 +18,10 @@ Live progress and the exact stop point are tracked in [`PROJECT-STATUS.md`](./PR
 
 The GitHub Pages target is **https://naveenmorla1901.github.io/omni-relay/** once the deploy workflow has run. One-time setup:
 
-1. Add the repository secret `EXPO_PUBLIC_ACCESS_KEYS` (comma-separated keys).
-2. Open **Settings → Pages** and set **Source** to **GitHub Actions**.
-3. Run the **Deploy web** workflow or push to `main`.
+1. Open **Settings → Pages** and set **Source** to **GitHub Actions**.
+2. Run the **Deploy web** workflow or push to `main`.
 
-GitHub Pages on a private repository requires a paid plan. On Free, make the repo public or use Cloudflare Pages; see [`docs/deployment.md`](./docs/deployment.md). A Pages site is publicly reachable even when the repo is private.
+No repository secret is needed. The access key is built into the client. This repository is public, so Pages is available on the Free plan; a Pages site is publicly reachable regardless of repo visibility.
 
 ## Requirements
 
@@ -32,18 +31,9 @@ GitHub Pages on a private repository requires a paid plan. On Free, make the rep
 
 ## Access key
 
-The app asks for a key before showing roles, including when a role URL is opened directly. Copy `.env.example` to `.env` and replace the placeholder, or set the build-time key list (comma-separated) before sharing a build:
+The app asks for a key before showing roles, including when a role URL is opened directly. The built-in key is the `ACCESS_KEY` constant in `apps/mobile-web/src/config/index.ts`; change that string to change the key. No server or GitHub secret is involved. Optional extra keys can be added with the build-time `EXPO_PUBLIC_ACCESS_KEYS` variable.
 
-```powershell
-$env:EXPO_PUBLIC_ACCESS_KEYS = "key-one,key-two"
-npm run export:web
-```
-
-```bash
-EXPO_PUBLIC_ACCESS_KEYS="key-one,key-two" npm run export:web
-```
-
-The development fallback is `clearrelay-demo`; production builds without the variable fail closed. This is a local front-door, not authentication — the key is embedded in the bundle and can be extracted. See `docs/deployment.md` for the limitation and the pairing-PIN follow-up.
+This is a client-side gate, not authentication — the key is embedded in the public bundle and can be extracted. See `docs/deployment.md` for the limitation and the pairing-PIN follow-up.
 
 ## Commands
 

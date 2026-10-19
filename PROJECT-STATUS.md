@@ -7,8 +7,8 @@
 
 **Last updated:** 2026-10-19
 **Current milestone:** M0 scaffold complete on web; M1 (WebRTC loopback + QR pairing) is next.
-**Current stop point:** Access gate, Projector naming, Admin/Projector UI skeletons, GitHub push, and the Pages deployment workflow are in place. No WebRTC, camera, or media code exists yet.
-**Next action:** Set the `EXPO_PUBLIC_ACCESS_KEYS` repo secret and enable GitHub Pages, then implement M1 (web `IConnection` + QR offer/answer).
+**Current stop point:** Access gate (client-side built-in key), Projector naming, Admin/Projector UI skeletons, GitHub push, and the Pages deployment workflow are in place. No WebRTC, camera, or media code exists yet.
+**Next action:** Publish the Pages build and verify the live key gate, then implement M1 (web `IConnection` + QR offer/answer).
 
 ## How to update this file
 
@@ -119,13 +119,13 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 ## Access and identity
 
 - [x] Local access-key gate on the home screen and every role route/deep link
-- [x] Keys come from `EXPO_PUBLIC_ACCESS_KEYS` (comma-separated)
+- [x] Built-in client-side key in `src/config/index.ts`; no server or repository secret
+- [x] Optional extra keys via `EXPO_PUBLIC_ACCESS_KEYS`
 - [x] Session-only unlock; **Lock session** returns to the gate
-- [x] Development fallback key is clearly marked in dev builds
 - [x] Access gate unit tests (accept, reject, lock clears role)
 - [ ] Pairing-level PIN/session secret (real per-session control)
-- [ ] Key rotation/distribution process
-- [!] Real authentication is **not** provided by the local key: it is embedded in the bundle and can be extracted. Do not treat it as a security boundary.
+- [x] Key rotation by editing `ACCESS_KEY` and redeploying
+- [!] Real authentication is **not** provided by the local key: it is embedded in the public bundle and can be extracted. Do not treat it as a security boundary.
 
 ## Admin / Projector UX
 
@@ -144,9 +144,10 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] First green CI run on GitHub
 - [x] GitHub Pages deployment workflow with `/omni-relay` base path
 - [x] Repository is public, so GitHub Pages is eligible on the Free plan
-- [ ] Add the `EXPO_PUBLIC_ACCESS_KEYS` repository secret
+- [x] No repository secret required; the access key is built into the client
 - [ ] Enable GitHub Pages (Source: GitHub Actions)
 - [ ] First successful `Deploy web` run
+- [ ] Verify the live key gate at `https://naveenmorla1901.github.io/omni-relay/`
 - [ ] Android release keystore + signing secrets
 - [ ] GitHub Actions APK build
 - [ ] Upload signed APK to GitHub Releases
@@ -158,7 +159,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **Serverless definition:** no cloud backend, database, or media server. Static hosting for the web UI is allowed; media/data stays peer-to-peer.
 - **Web hosting recommendation:** GitHub Pages for the static Expo web export. It is free, HTTPS, and has no runtime backend. The optional signaling helper stays self-hosted for remote pairing.
 - **Projector naming:** UI and route use **Projector**; the wire role remains `display` for compatibility with the plan/protocol.
-- **Access key:** a local front-door for casual access control, not authentication. Set `EXPO_PUBLIC_ACCESS_KEYS` before any shared build. Development uses `clearrelay-demo`; production builds fail closed without the variable.
+- **Access key:** a local front-door for casual access control, not authentication. The built-in `ACCESS_KEY` in `src/config/index.ts` is bundled into the public client; change it and redeploy to rotate. No server or GitHub secret involved.
 - **GitHub Pages base path:** `EXPO_BASE_URL=/omni-relay` is injected by the deploy workflow so local dev stays at the root.
 - **APK path:** build locally or with GitHub Actions; do not require EAS cloud. Publish to GitHub Releases.
 - **Default pairing:** QR (serverless). Room-code signaling is optional until M8.
@@ -166,7 +167,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 ## Open questions / decisions needed
 
 - [ ] Confirm GitHub Pages vs. self-hosted Caddy for the Admin/Projector web app.
-- [ ] Decide how access keys are delivered/rotated for recipients.
+- [ ] Decide whether a stronger pairing PIN/session secret is needed for real access control.
 - [ ] Choose the Android application ID if `com.clearrelay.app` is not desired.
 - [ ] Decide whether web Recorder is supported in v1 or native-only.
 
@@ -175,3 +176,4 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **2026-10-19** — Scaffolded the Expo workspace, role routes, protocol/config modules, tests, lint, and static web export. Added the access-key gate (including a guard for direct role URLs), Projector naming, Admin/Projector UI skeletons, app identity, project status tracker, deployment notes, and a GitHub Actions CI workflow. Verified with 10 unit tests, typecheck, lint, and web export. Next: M1 WebRTC loopback.
 - **2026-10-19** — Initialized git, committed M0, and pushed `main` to `https://github.com/naveenmorla1901/omni-relay`. Added the GitHub Pages deploy workflow, dynamic `EXPO_BASE_URL` support, fail-closed production access keys, and the private-repo Pages notes. Pages activation and the access-key secret are the remaining deploy steps.
 - **2026-10-19** — Repo made public; CI is green. `Deploy web` is blocked only on the missing `EXPO_PUBLIC_ACCESS_KEYS` repository secret, so Pages is not enabled yet.
+- **2026-10-19** — Moved to a built-in client-side access key (`ACCESS_KEY`), removed the Pages secret requirement, and simplified the gate. No server-side key storage.

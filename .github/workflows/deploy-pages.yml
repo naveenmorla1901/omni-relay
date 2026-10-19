@@ -31,19 +31,9 @@ jobs:
       - name: Install
         run: npm ci
 
-      - name: Require access key secret
-        env:
-          ACCESS_KEYS: ${{ secrets.EXPO_PUBLIC_ACCESS_KEYS }}
-        run: |
-          if [ -z "$ACCESS_KEYS" ]; then
-            echo "::error::Add the EXPO_PUBLIC_ACCESS_KEYS repository secret before deploying."
-            exit 1
-          fi
-
       - name: Export web
         env:
           EXPO_BASE_URL: /omni-relay
-          EXPO_PUBLIC_ACCESS_KEYS: ${{ secrets.EXPO_PUBLIC_ACCESS_KEYS }}
         run: npm run export:web
 
       - name: Configure Pages

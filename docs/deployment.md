@@ -22,21 +22,14 @@ If you want zero third-party hosting at all, serve the same `dist/` folder from 
 Caddy or Nginx. That is reliable on your LAN but requires HTTPS and a reachable address for remote
 use.
 
-## Access keys
+## Access key
 
-Set the key list when building; Expo inlines `EXPO_PUBLIC_*` values into the bundle:
+The key is client-side. It is the `ACCESS_KEY` constant in
+`apps/mobile-web/src/config/index.ts`, so it is available in the web bundle and the APK without any
+server or repository secret. Change that string and redeploy to rotate the key.
 
-```powershell
-$env:EXPO_PUBLIC_ACCESS_KEYS = "family-key-1,family-key-2"
-npm run export:web
-```
-
-```bash
-EXPO_PUBLIC_ACCESS_KEYS="family-key-1,family-key-2" npm run export:web
-```
-
-Without the variable, the development server uses `clearrelay-demo`. Production exports and release
-builds fail closed when the variable is missing, so set the variable before any build you share.
+Optional extra keys can be added at build time with `EXPO_PUBLIC_ACCESS_KEYS` (comma-separated), but
+the built-in key always works.
 
 > The key is a local front-door, not authentication. It is embedded in the JS bundle and can be
 > extracted from a web build or APK. It keeps casual users out of the role picker; it does not
@@ -49,29 +42,28 @@ The workflow is `.github/workflows/deploy-pages.yml`. It builds `apps/mobile-web
 
 One-time setup on GitHub:
 
-1. Add a repository secret named `EXPO_PUBLIC_ACCESS_KEYS` (Settings → Secrets and variables →
-   Actions → New repository secret). Use a comma-separated list, for example
-   `family-key-1,family-key-2`. The workflow fails instead of publishing a build without it.
-2. Open Settings → Pages → Build and deployment, and set **Source** to **GitHub Actions**.
-3. Push to `main`, or run the **Deploy web** workflow manually.
-4. Wait for the green deployment, then open `https://<user>.github.io/<repo>/`.
+1. Open Settings → Pages → Build and deployment, and set **Source** to **GitHub Actions**.
+2. Push to `main`, or run the **Deploy web** workflow manually.
+3. Wait for the green deployment, then open `https://<user>.github.io/<repo>/`.
 
-The workflow passes the project-site base path through `EXPO_BASE_URL`; local `npm run web` remains at
-the root because `app.config.js` only adds `baseUrl` when that variable is set.
+No repository secret is required; the access key is built into the client. The workflow passes the
+project-site base path through `EXPO_BASE_URL`; local `npm run web` remains at the root because
+`app.config.js` only adds `baseUrl` when that variable is set.
 
 ### Private repositories
 
-GitHub Pages supports private repositories only on plans that include it (for example GitHub Pro,
-Team, or Enterprise). On GitHub Free, a private repository cannot publish Pages. Options:
+This repository is public. If you make it private later, GitHub Pages supports private repositories
+only on plans that include it (for example GitHub Pro, Team, or Enterprise). On GitHub Free, a
+private repository cannot publish Pages. Options:
 
-- Make this repository public. The app code and build plan are not secrets, and the access key is
+- Keep the repository public. The app code and build plan are not secrets, and the access key is
   bundled into the client anyway.
 - Upgrade the account to a plan that includes private Pages.
 - Use Cloudflare Pages (free) connected to the private GitHub repo; it supports private repositories
   and can deploy the same `dist/` output.
 
-> Even with a private repository, the Pages site itself is public on the internet. The access-key
-> gate is client-side; anyone who has the URL can load the app shell and attempt keys.
+> A Pages site is public on the internet. The access-key gate is client-side; anyone who has the URL
+> can load the app shell and attempt keys.
 
 HTTPS is required for browser camera access. The Recorder is native-first; Admin and Projector only
 need WebRTC.

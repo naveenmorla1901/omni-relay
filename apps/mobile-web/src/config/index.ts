@@ -3,30 +3,19 @@
  * Feature code must import from here instead of hard-coding magic numbers.
  */
 
-const DEFAULT_ACCESS_KEY = 'clearrelay-demo';
-
-const rawAccessKeys = process.env.EXPO_PUBLIC_ACCESS_KEYS;
-const isDev = typeof __DEV__ === 'undefined' ? true : __DEV__;
-
 /**
- * Comma-separated at build time: EXPO_PUBLIC_ACCESS_KEYS="key-one,key-two".
- * This is a local front-door, not real authentication: values are embedded in
- * the app bundle and can be extracted. Pairing PINs will add real per-session
- * control later.
- *
- * The fallback key only exists in development. Production builds without the
- * variable fail closed (no key can unlock) so a shared build cannot silently
- * ship with a known key.
+ * Client-side access key. It is bundled into the app, so it is a UI gate only,
+ * not authentication. Change this string to change the key.
  */
-export const USING_DEFAULT_ACCESS_KEY = rawAccessKeys === undefined;
+export const ACCESS_KEY = 'Thiswillbekey1901';
 
-export const ACCESS_KEYS =
-  USING_DEFAULT_ACCESS_KEY && !isDev
-    ? []
-    : (rawAccessKeys ?? DEFAULT_ACCESS_KEY)
-        .split(',')
-        .map((key) => key.trim())
-        .filter(Boolean);
+const EXTRA_ACCESS_KEYS = (process.env.EXPO_PUBLIC_ACCESS_KEYS ?? '')
+  .split(',')
+  .map((key) => key.trim())
+  .filter(Boolean);
+
+/** The built-in key always works; env vars can add extra keys at build time. */
+export const ACCESS_KEYS = Array.from(new Set([ACCESS_KEY, ...EXTRA_ACCESS_KEYS]));
 
 export const CONFIG = {
   TARGET_FPS: 8,
