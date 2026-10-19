@@ -36,10 +36,21 @@ jobs:
           EXPO_BASE_URL: /omni-relay
         run: npm run export:web
 
+      - name: Check Pages is enabled
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! build_type=$(gh api "repos/$GITHUB_REPOSITORY/pages" --jq .build_type 2>/dev/null); then
+            echo "::error::Enable GitHub Pages first: Settings -> Pages -> Source: GitHub Actions."
+            exit 1
+          fi
+          if [ "$build_type" != "workflow" ]; then
+            echo "::error::Set Settings -> Pages -> Source to GitHub Actions (current: $build_type)."
+            exit 1
+          fi
+
       - name: Configure Pages
         uses: actions/configure-pages@v5
-        with:
-          enablement: true
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

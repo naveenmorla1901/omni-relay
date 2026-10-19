@@ -46,6 +46,9 @@ One-time setup on GitHub:
 2. Push to `main`, or run the **Deploy web** workflow manually.
 3. Wait for the green deployment, then open `https://<user>.github.io/<repo>/`.
 
+The workflow cannot enable Pages with the default `GITHUB_TOKEN`; the first toggle must be done in
+repository settings. After that, the preflight check will pass and deployments are automatic.
+
 No repository secret is required; the access key is built into the client. The workflow passes the
 project-site base path through `EXPO_BASE_URL`; local `npm run web` remains at the root because
 `app.config.js` only adds `baseUrl` when that variable is set.

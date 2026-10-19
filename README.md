@@ -21,7 +21,7 @@ The GitHub Pages target is **https://naveenmorla1901.github.io/omni-relay/** onc
 1. Open **Settings → Pages** and set **Source** to **GitHub Actions**.
 2. Run the **Deploy web** workflow or push to `main`.
 
-No repository secret is needed. The access key is built into the client. This repository is public, so Pages is available on the Free plan; a Pages site is publicly reachable regardless of repo visibility.
+The first toggle must be done in Settings; the workflow cannot enable Pages with the default token. After that, deployments are automatic. No repository secret is needed — the access key is built into the client. This repository is public, so Pages is available on the Free plan; a Pages site is publicly reachable regardless of repo visibility.
 
 ## Requirements
 
