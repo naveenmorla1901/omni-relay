@@ -7,7 +7,7 @@
 
 **Last updated:** 2026-10-19
 **Current milestone:** M1 web half and M2 web half are implemented and E2E-verified: Recorder camera → Admin live video over WebRTC, paired by QR or copy/paste code. Native `IConnection`/`ICameraSource` are still stubs. M3 (Admin capture + gallery) is next.
-**Current stop point:** The web Recorder creates an invite, Admin scans/pastes it and returns an answer, the Recorder scans/pastes the answer, the camera starts, and Admin renders the live remote track. Verified with a two-context headless E2E run (pairing, data-channel hello, and video on both sides). No native camera/WebRTC, no QR chunk fallback, no APK.
+**Current stop point:** The web Recorder creates an invite, Admin scans/pastes it and returns an answer, the Recorder scans/pastes the answer, the camera starts, and Admin renders the live remote track. Verified with a two-context headless E2E run (pairing, data-channel hello, and video on both sides). The `9fdf904` deploy is green and the live bundle contains the pairing code (`CR1.` / `clearrelay-control`). No native camera/WebRTC, no QR chunk fallback, no APK.
 **Next action:** Implement M3: freeze a full-intrinsic-resolution still in Admin and add the in-memory gallery/thumbnails.
 
 ## How to update this file
@@ -148,6 +148,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] Enable GitHub Pages (Source: GitHub Actions)
 - [x] First successful `Deploy web` run
 - [x] Verify the live key gate at `https://naveenmorla1901.github.io/omni-relay/`
+- [x] Deploy the M1/M2 web build (`9fdf904`) and verify the live bundle includes the pairing code
 - [x] Pages SPA fallback (`404.html`) so direct role URLs survive a reload
 - [ ] Android release keystore + signing secrets
 - [ ] GitHub Actions APK build
@@ -171,6 +172,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 
 - [x] GitHub Pages is the Admin/Projector web target; the live site is up.
 - [x] Web Recorder is supported in v1; native is an optimization/APK path, not a requirement for the browser workflow.
+- [ ] Confirm the real two-phone QR scan + camera-permission flow (manual code path is E2E-verified; user test in progress).
 - [ ] Decide whether a stronger pairing PIN/session secret is needed for real access control.
 - [ ] Choose the Android application ID if `com.clearrelay.app` is not desired.
 
@@ -180,4 +182,4 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **2026-10-19** — Initialized git, committed M0, and pushed `main` to `https://github.com/naveenmorla1901/omni-relay`. Added the GitHub Pages deploy workflow, dynamic `EXPO_BASE_URL` support, fail-closed production access keys, and the private-repo Pages notes. Pages activation and the access-key secret are the remaining deploy steps.
 - **2026-10-19** — Repo made public; CI is green. `Deploy web` is blocked only on the missing `EXPO_PUBLIC_ACCESS_KEYS` repository secret, so Pages is not enabled yet.
 - **2026-10-19** — Moved to a built-in client-side access key (`ACCESS_KEY`), removed the Pages secret requirement, and simplified the gate. No server-side key storage. Pages was enabled; `Deploy web` succeeded and the live key gate at `https://naveenmorla1901.github.io/omni-relay/` was verified. The build is still the M0 UI shell: no WebRTC, camera, media, or APK.
-- **2026-10-19** — Implemented the web half of M1/M2: browser `IConnection` (data channel + video transceiver + encoder clarity params), non-trickle ICE with timeout, gzip/base64url pairing codes (`CR1.`), `ICameraSource` web implementation (`getUserMedia`), QR generate/scan, manual copy/paste fallback, and working Recorder → Admin pairing/live-feed screens. Added 4 signal unit tests (14 total). Verified with a two-context headless E2E run: offer → answer → connect, data-channel `hello`, and live 320×240 video on both sides. Native implementations remain stubs; M3 capture/gallery is next.
+- **2026-10-19** — Implemented the web half of M1/M2: browser `IConnection` (data channel + video transceiver + encoder clarity params), non-trickle ICE with timeout, gzip/base64url pairing codes (`CR1.`), `ICameraSource` web implementation (`getUserMedia`), QR generate/scan, manual copy/paste fallback, and working Recorder → Admin pairing/live-feed screens. Added 4 signal unit tests (14 total). Verified with a two-context headless E2E run: offer → answer → connect, data-channel `hello`, and live 320×240 video on both sides. The `9fdf904` `Deploy web` run is green and the live bundle includes the pairing code. Native implementations remain stubs; M3 capture/gallery is next.
