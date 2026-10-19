@@ -141,11 +141,12 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 
 - [x] Initialize the local git repository and push `main` to GitHub
 - [x] GitHub Actions CI workflow: typecheck, lint, tests, web export
-- [ ] First green CI run on GitHub
+- [x] First green CI run on GitHub
 - [x] GitHub Pages deployment workflow with `/omni-relay` base path
+- [x] Repository is public, so GitHub Pages is eligible on the Free plan
 - [ ] Add the `EXPO_PUBLIC_ACCESS_KEYS` repository secret
 - [ ] Enable GitHub Pages (Source: GitHub Actions)
-- [!] Private-repo Pages needs GitHub Pro/Team/Enterprise; otherwise make the repo public or use Cloudflare Pages
+- [ ] First successful `Deploy web` run
 - [ ] Android release keystore + signing secrets
 - [ ] GitHub Actions APK build
 - [ ] Upload signed APK to GitHub Releases
@@ -173,3 +174,4 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 
 - **2026-10-19** — Scaffolded the Expo workspace, role routes, protocol/config modules, tests, lint, and static web export. Added the access-key gate (including a guard for direct role URLs), Projector naming, Admin/Projector UI skeletons, app identity, project status tracker, deployment notes, and a GitHub Actions CI workflow. Verified with 10 unit tests, typecheck, lint, and web export. Next: M1 WebRTC loopback.
 - **2026-10-19** — Initialized git, committed M0, and pushed `main` to `https://github.com/naveenmorla1901/omni-relay`. Added the GitHub Pages deploy workflow, dynamic `EXPO_BASE_URL` support, fail-closed production access keys, and the private-repo Pages notes. Pages activation and the access-key secret are the remaining deploy steps.
+- **2026-10-19** — Repo made public; CI is green. `Deploy web` is blocked only on the missing `EXPO_PUBLIC_ACCESS_KEYS` repository secret, so Pages is not enabled yet.
