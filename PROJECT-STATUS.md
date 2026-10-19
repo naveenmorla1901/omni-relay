@@ -6,9 +6,9 @@
 > unless a decision is recorded below.
 
 **Last updated:** 2026-10-19
-**Current milestone:** M0 scaffold complete on web; M1 (WebRTC loopback + QR pairing) is next.
-**Current stop point:** Access gate (client-side built-in key), Projector naming, Admin/Projector UI skeletons, GitHub push, and the Pages deployment workflow are in place. No WebRTC, camera, or media code exists yet.
-**Next action:** Publish the Pages build and verify the live key gate, then implement M1 (web `IConnection` + QR offer/answer).
+**Current milestone:** M0 scaffold complete on web; Pages is live. M1 (WebRTC loopback + QR pairing) is next.
+**Current stop point:** The live key gate at `https://naveenmorla1901.github.io/omni-relay/` is verified. Access gate, Projector naming, and Admin/Projector UI skeletons are in place. No WebRTC, camera, or media code exists yet, and there is no APK.
+**Next action:** Implement M1: web `IConnection` data channel, QR offer/answer loop, and two-browser-tab echo test.
 
 ## How to update this file
 
@@ -111,7 +111,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [ ] Heartbeats and auto-reconnect
 - [ ] Status UI and session PIN
 - [ ] Full responsive Admin polish
-- [ ] Web deploy workflow
+- [x] Web deploy workflow
 - [ ] Android release build + signing
 - [ ] iOS build/TestFlight
 - [ ] Final device matrix and release checklist
@@ -145,9 +145,9 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] GitHub Pages deployment workflow with `/omni-relay` base path
 - [x] Repository is public, so GitHub Pages is eligible on the Free plan
 - [x] No repository secret required; the access key is built into the client
-- [ ] Enable GitHub Pages (Source: GitHub Actions)
-- [ ] First successful `Deploy web` run
-- [ ] Verify the live key gate at `https://naveenmorla1901.github.io/omni-relay/`
+- [x] Enable GitHub Pages (Source: GitHub Actions)
+- [x] First successful `Deploy web` run
+- [x] Verify the live key gate at `https://naveenmorla1901.github.io/omni-relay/`
 - [ ] Android release keystore + signing secrets
 - [ ] GitHub Actions APK build
 - [ ] Upload signed APK to GitHub Releases
@@ -166,7 +166,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 
 ## Open questions / decisions needed
 
-- [ ] Confirm GitHub Pages vs. self-hosted Caddy for the Admin/Projector web app.
+- [x] GitHub Pages is the Admin/Projector web target; the live site is up.
 - [ ] Decide whether a stronger pairing PIN/session secret is needed for real access control.
 - [ ] Choose the Android application ID if `com.clearrelay.app` is not desired.
 - [ ] Decide whether web Recorder is supported in v1 or native-only.
@@ -176,4 +176,4 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **2026-10-19** — Scaffolded the Expo workspace, role routes, protocol/config modules, tests, lint, and static web export. Added the access-key gate (including a guard for direct role URLs), Projector naming, Admin/Projector UI skeletons, app identity, project status tracker, deployment notes, and a GitHub Actions CI workflow. Verified with 10 unit tests, typecheck, lint, and web export. Next: M1 WebRTC loopback.
 - **2026-10-19** — Initialized git, committed M0, and pushed `main` to `https://github.com/naveenmorla1901/omni-relay`. Added the GitHub Pages deploy workflow, dynamic `EXPO_BASE_URL` support, fail-closed production access keys, and the private-repo Pages notes. Pages activation and the access-key secret are the remaining deploy steps.
 - **2026-10-19** — Repo made public; CI is green. `Deploy web` is blocked only on the missing `EXPO_PUBLIC_ACCESS_KEYS` repository secret, so Pages is not enabled yet.
-- **2026-10-19** — Moved to a built-in client-side access key (`ACCESS_KEY`), removed the Pages secret requirement, and simplified the gate. No server-side key storage.
+- **2026-10-19** — Moved to a built-in client-side access key (`ACCESS_KEY`), removed the Pages secret requirement, and simplified the gate. No server-side key storage. Pages was enabled; `Deploy web` succeeded and the live key gate at `https://naveenmorla1901.github.io/omni-relay/` was verified. The build is still the M0 UI shell: no WebRTC, camera, media, or APK.
