@@ -2,7 +2,7 @@
 
 ClearRelay is a greenfield Expo + WebRTC app. `ClearRelay-Build-Plan.md` is the canonical spec: read §1–5, §11, and §21 before architectural work. Build in M0→M9 order (§15) and keep each milestone demoable.
 
-**Current state:** M0 scaffold (access gate, role picker, role routes, pairing-mode UI, Admin/Projector shells, shared protocol/config), with the web export verified. Native prebuild/dev-client builds have not been run yet. M1 — WebRTC loopback + QR pairing — is next.
+**Current state:** Web half of M1/M2 is done: the browser Recorder pairs with Admin by QR or copy/paste code, streams `getUserMedia` video over WebRTC, and Admin renders the live remote track. Native `IConnection`/`ICameraSource` implementations are still stubs, and native prebuild/dev-client builds have not been run. M3 — Admin capture + gallery — is next.
 
 **Progress tracking:** `PROJECT-STATUS.md` is the live checklist and stop point. At the end of every working session, update its checkboxes, current stop point, next action, and session log. Do not let it drift from the code.
 

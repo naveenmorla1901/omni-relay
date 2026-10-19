@@ -29,6 +29,7 @@ export const CONFIG = {
   DC_HIGH_WATER: 1 * 1024 * 1024,
   HEARTBEAT_MS: 2000,
   MISSED_BEATS_DEGRADE: 3,
+  ICE_GATHERING_TIMEOUT_MS: 12_000,
   ICE_SERVERS: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },

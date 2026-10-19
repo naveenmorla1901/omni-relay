@@ -103,11 +103,11 @@ function PairWorkspace() {
 
           <View style={[styles.notice, { borderColor: theme.border }]}>
             <ThemedText type="smallBold" style={{ color: theme.accent }}>
-              M0 scaffold
+              Pairing works now
             </ThemedText>
             <ThemedText type="small" themeColor="textSecondary">
-              QR generation/scanning lands in M1. The room-code helper lands in M8 and must never
-              forward media.
+              Recorder → Admin uses this QR/manual exchange for the live feed. The room-code helper
+              lands in M8 and must never forward media.
             </ThemedText>
           </View>
         </ScrollView>

@@ -36,6 +36,9 @@ jobs:
           EXPO_BASE_URL: /omni-relay
         run: npm run export:web
 
+      - name: Add Pages SPA fallback
+        run: cp apps/mobile-web/dist/index.html apps/mobile-web/dist/404.html
+
       - name: Check Pages is enabled
         env:
           GH_TOKEN: ${{ github.token }}

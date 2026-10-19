@@ -10,7 +10,7 @@ There is no cloud backend, media server, or persistence. An optional signaling h
 
 ## Status
 
-M0 scaffold is in place: access-key gate, Expo Router role picker, Admin/Projector shells, pairing-mode selection, shared protocol/config modules, and unit tests. The web export is verified; native prebuild/dev-client builds have not been run yet. WebRTC, camera, and CV work start at M1.
+M0 scaffold is in place (access-key gate, Expo Router role picker, Admin/Projector shells, pairing-mode selection, shared protocol/config modules, and unit tests), plus the web half of M1/M2: the browser Recorder pairs with Admin by compressed QR code or copy/paste text, streams camera video over WebRTC, and Admin renders the live remote track. Native `IConnection`/`ICameraSource` are stubs; no APK yet. M3 capture/gallery is next.
 
 Live progress and the exact stop point are tracked in [`PROJECT-STATUS.md`](./PROJECT-STATUS.md). The canonical architecture, milestones, protocol, and acceptance criteria live in [`ClearRelay-Build-Plan.md`](./ClearRelay-Build-Plan.md). Read sections 1–5, 11, and 21 before changing architecture. Distribution and APK notes are in [`docs/deployment.md`](./docs/deployment.md).
 
@@ -22,6 +22,17 @@ The GitHub Pages target is **https://naveenmorla1901.github.io/omni-relay/** onc
 2. Run the **Deploy web** workflow or push to `main`.
 
 The first toggle must be done in Settings; the workflow cannot enable Pages with the default token. After that, deployments are automatic. No repository secret is needed — the access key is built into the client. This repository is public, so Pages is available on the Free plan; a Pages site is publicly reachable regardless of repo visibility.
+
+### Live feed quick start (Recorder → Admin)
+
+Both devices must open the HTTPS URL (camera access is blocked on plain HTTP) and enter the access key.
+
+1. **Recorder phone:** tap **Recorder → Create invite**. A QR code and a text code appear.
+2. **Admin device:** tap **Admin → Scan Recorder invite** (or paste the text code into the invite field) and press **Create answer**.
+3. **Recorder phone:** tap **Scan QR** and point it at the Admin answer, or paste the answer code and press **Connect**.
+4. The Recorder camera starts automatically, and the Admin live-feed pane shows the stream.
+
+If scanning is awkward, use **Copy code** on one side and paste it on the other; both paths are first-class. Keep both browser tabs awake — locking the phone screen pauses the camera. The phone's rear camera is used by default.
 
 ## Requirements
 

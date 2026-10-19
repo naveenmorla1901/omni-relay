@@ -1,6 +1,7 @@
 import { Link } from 'expo-router';
 import { useState } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -11,9 +12,14 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AccessBoundary } from '@/components/access-boundary';
+import { CodeEntry } from '@/components/code-entry';
+import { PairingCard } from '@/components/pairing-card';
+import { QrScanner } from '@/components/qr-scanner';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { VideoView } from '@/components/video-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { usePairing } from '@/hooks/use-pairing';
 import { useTheme } from '@/hooks/use-theme';
 import { useSessionStore } from '@/store/session';
 
@@ -31,10 +37,13 @@ function AdminWorkspace() {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const lock = useSessionStore((state) => state.lock);
+  const pairing = usePairing('admin');
   const [mode, setMode] = useState<SendMode>('code');
   const [code, setCode] = useState('');
   const [language, setLanguage] = useState('');
+  const [scannerOpen, setScannerOpen] = useState(false);
   const wide = width >= 1000;
+  const connected = pairing.phase === 'connected';
 
   return (
     <ThemedView style={styles.container}>
@@ -50,7 +59,7 @@ function AdminWorkspace() {
             </Link>
 
             <View style={styles.topbarRight}>
-              <StatusChip label="Recorder offline" />
+              <StatusChip label={connected ? 'Recorder connected' : 'Recorder offline'} active={connected} />
               <StatusChip label="Projector offline" />
               <Pressable
                 accessibilityRole="button"
@@ -88,26 +97,140 @@ function AdminWorkspace() {
               <View style={styles.paneHeader}>
                 <ThemedText type="smallBold">Live feed</ThemedText>
                 <ThemedText type="code" themeColor="textSecondary">
-                  LINK A · M2
+                  {connected ? 'LINK A · LIVE' : 'LINK A · PAIR'}
                 </ThemedText>
               </View>
 
-              <View style={[styles.video, { borderColor: theme.border }]}>
-                <ThemedText type="code" style={styles.videoLabel}>
-                  NO SIGNAL
-                </ThemedText>
-                <ThemedText type="small" style={styles.videoHint}>
-                  Recorder video arrives in M2
-                </ThemedText>
-                <ThemedText type="small" style={styles.videoMeta}>
-                  1080p+ · ~8 FPS · maintain-resolution
-                </ThemedText>
-              </View>
+              {connected ? (
+                <>
+                  <View style={[styles.liveVideo, { borderColor: theme.border }]}>
+                    <VideoView
+                      stream={pairing.remoteStream}
+                      placeholder="Waiting for the Recorder camera…"
+                    />
+                  </View>
 
-              <View style={styles.actionRow}>
-                <DisabledAction label="Capture still" note="M3" />
-                <DisabledAction label="Open gallery" note="M3" />
-              </View>
+                  <View style={styles.statusRow}>
+                    <StatusChip label="WebRTC link live" active />
+                    <StatusChip
+                      label={pairing.peerRole === 'recorder' ? 'Recorder checked in' : 'Waiting for hello'}
+                      active={pairing.peerRole === 'recorder'}
+                    />
+                  </View>
+
+                  <View style={styles.actionRow}>
+                    <DisabledAction label="Capture still" note="M3" />
+                    <DisabledAction label="Open gallery" note="M3" />
+                  </View>
+
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => pairing.reset()}
+                    style={({ pressed }) => [
+                      styles.secondaryButton,
+                      {
+                        borderColor: theme.border,
+                        backgroundColor: pressed ? theme.backgroundSelected : theme.background,
+                      },
+                    ]}>
+                    <ThemedText type="smallBold">End connection</ThemedText>
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <ThemedText type="small" themeColor="textSecondary">
+                    Pair the Recorder phone to see its camera here. The Recorder creates the invite;
+                    this Admin device scans it and shows the answer.
+                  </ThemedText>
+
+                  {scannerOpen ? (
+                    <QrScanner
+                      onClose={() => setScannerOpen(false)}
+                      onScan={(inviteCode) => {
+                        setScannerOpen(false);
+                        void pairing.joinInvite(inviteCode);
+                      }}
+                    />
+                  ) : null}
+
+                  {pairing.phase === 'idle' || pairing.phase === 'failed' ? (
+                    <>
+                      {pairing.phase === 'failed' ? (
+                        <View style={[styles.errorBox, { borderColor: theme.danger }]}>
+                          <ThemedText type="small" style={{ color: theme.danger }}>
+                            {pairing.error ?? 'Could not pair with the Recorder. Try again.'}
+                          </ThemedText>
+                        </View>
+                      ) : null}
+
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => setScannerOpen(true)}
+                        style={({ pressed }) => [
+                          styles.primaryButton,
+                          { backgroundColor: theme.accent, opacity: pressed ? 0.8 : 1 },
+                        ]}>
+                        <ThemedText type="smallBold" style={{ color: theme.accentText }}>
+                          Scan Recorder invite
+                        </ThemedText>
+                      </Pressable>
+
+                      {!scannerOpen ? (
+                        <CodeEntry
+                          title="Recorder invite"
+                          description="No camera on this device? Paste the Recorder's invite code instead."
+                          placeholder="Paste the Recorder invite code…"
+                          actionLabel="Create answer"
+                          onScan={() => setScannerOpen(true)}
+                          onSubmit={(inviteCode) => {
+                            setScannerOpen(false);
+                            void pairing.joinInvite(inviteCode);
+                          }}
+                          busy={pairing.busy}
+                          error={pairing.error}
+                        />
+                      ) : null}
+                    </>
+                  ) : null}
+
+                  {pairing.phase === 'joining' ? (
+                    <View style={styles.loadingRow}>
+                      <ActivityIndicator color={theme.accent} />
+                      <ThemedText type="small" themeColor="textSecondary">
+                        Creating the Admin answer…
+                      </ThemedText>
+                    </View>
+                  ) : null}
+
+                  {pairing.phase === 'waiting-for-connection' && pairing.localCode ? (
+                    <>
+                      <PairingCard
+                        title="Admin answer"
+                        description="Show this to the Recorder phone. It will scan this answer and start the camera."
+                        code={pairing.localCode}
+                      />
+                      <View style={styles.loadingRow}>
+                        <ActivityIndicator color={theme.accent} />
+                        <ThemedText type="small" themeColor="textSecondary">
+                          Waiting for the Recorder to connect…
+                        </ThemedText>
+                      </View>
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => pairing.reset()}
+                        style={({ pressed }) => [
+                          styles.secondaryButton,
+                          {
+                            borderColor: theme.border,
+                            backgroundColor: pressed ? theme.backgroundSelected : theme.background,
+                          },
+                        ]}>
+                        <ThemedText type="smallBold">Cancel</ThemedText>
+                      </Pressable>
+                    </>
+                  ) : null}
+                </>
+              )}
             </View>
 
             <View
@@ -218,12 +341,14 @@ function AdminWorkspace() {
   );
 }
 
-function StatusChip({ label }: { label: string }) {
+function StatusChip({ label, active = false }: { label: string; active?: boolean }) {
   const theme = useTheme();
 
   return (
     <View style={[styles.statusChip, { borderColor: theme.border }]}>
-      <View style={[styles.statusDot, { backgroundColor: theme.textSecondary }]} />
+      <View
+        style={[styles.statusDot, { backgroundColor: active ? theme.success : theme.textSecondary }]}
+      />
       <ThemedText type="small" themeColor="textSecondary">
         {label}
       </ThemedText>
@@ -341,6 +466,13 @@ const styles = StyleSheet.create({
     backgroundColor: '#05070A',
     padding: Spacing.four,
   },
+  liveVideo: {
+    height: 340,
+    borderWidth: 1,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: '#05070A',
+  },
   videoLabel: {
     color: '#8B96A5',
     fontSize: 16,
@@ -408,5 +540,33 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.three,
+  },
+  statusRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+  },
+  primaryButton: {
+    alignSelf: 'flex-start',
+    borderRadius: 10,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.three,
+  },
+  secondaryButton: {
+    alignSelf: 'flex-start',
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.three,
+  },
+  loadingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+  },
+  errorBox: {
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: Spacing.three,
   },
 });

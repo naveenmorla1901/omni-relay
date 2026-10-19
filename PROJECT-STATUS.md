@@ -6,9 +6,9 @@
 > unless a decision is recorded below.
 
 **Last updated:** 2026-10-19
-**Current milestone:** M0 scaffold complete on web; Pages is live. M1 (WebRTC loopback + QR pairing) is next.
-**Current stop point:** The live key gate at `https://naveenmorla1901.github.io/omni-relay/` is verified. Access gate, Projector naming, and Admin/Projector UI skeletons are in place. No WebRTC, camera, or media code exists yet, and there is no APK.
-**Next action:** Implement M1: web `IConnection` data channel, QR offer/answer loop, and two-browser-tab echo test.
+**Current milestone:** M1 web half and M2 web half are implemented and E2E-verified: Recorder camera → Admin live video over WebRTC, paired by QR or copy/paste code. Native `IConnection`/`ICameraSource` are still stubs. M3 (Admin capture + gallery) is next.
+**Current stop point:** The web Recorder creates an invite, Admin scans/pastes it and returns an answer, the Recorder scans/pastes the answer, the camera starts, and Admin renders the live remote track. Verified with a two-context headless E2E run (pairing, data-channel hello, and video on both sides). No native camera/WebRTC, no QR chunk fallback, no APK.
+**Next action:** Implement M3: freeze a full-intrinsic-resolution still in Admin and add the in-memory gallery/thumbnails.
 
 ## How to update this file
 
@@ -40,24 +40,24 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 
 ### M1 — WebRTC loopback + QR pairing
 
-- [ ] `IConnection` web implementation (data channel only)
-- [ ] `IConnection` native implementation (`react-native-webrtc`)
-- [ ] Non-trickle ICE gathering for QR mode
-- [ ] SDP gzip + base64 compression
-- [ ] Chunked/animated QR fallback and reassembly
-- [ ] QR scan plus answer-QR round trip
-- [ ] Two-browser-tab data-channel echo test
-- [ ] Unit tests for SDP compression and QR chunk reassembly
+- [x] `IConnection` web implementation (data channel + video transceiver)
+- [ ] `IConnection` native implementation (`react-native-webrtc`) — deferred until the native prebuild phase
+- [x] Non-trickle ICE gathering for QR mode (with a timeout so a slow STUN server cannot block pairing)
+- [x] SDP gzip + base64 compression (`fflate`, `CR1.` prefix)
+- [ ] Chunked/animated QR fallback and reassembly — not needed at current sizes (~2.4 KB fits one version-40-L QR)
+- [~] QR scan plus answer-QR round trip — scanner and manual code entry are both wired; manual round trip E2E-verified, physical QR scanning not yet exercised on two phones
+- [x] Two-browser-tab data-channel echo test (two-context headless E2E: offer/answer exchange, `hello` role message, live video)
+- [~] Unit tests for SDP compression and QR chunk reassembly — compression/invalid-code tests added; chunk reassembly not applicable yet
 
 ### M2 — Live video Recorder → Admin
 
-- [ ] Web camera source (`getUserMedia`) behind `ICameraSource`
-- [ ] Native camera source (Vision Camera) + format selection
-- [ ] Remote video track render in Admin
-- [ ] Encoder params: `maintain-resolution`, low FPS, high bitrate
-- [ ] Recorder waits for Admin and shows pairing state
+- [x] Web camera source (`getUserMedia`) behind `ICameraSource`
+- [ ] Native camera source (Vision Camera) + format selection — deferred until the native prebuild phase
+- [x] Remote video track render in Admin
+- [x] Encoder params: `maintain-resolution`, low FPS, high bitrate (`scaleResolutionDownBy: 1`, `maxFramerate`, `maxBitrate`)
+- [x] Recorder waits for Admin and shows pairing state
 - [ ] Battery guard: pause camera/CV/encoder when the app backgrounds, resume on return
-- [ ] Only the active role's pipeline runs; no background capture from the role picker
+- [x] Only the active role's pipeline runs; no background capture from the role picker
 
 ### M3 — Admin capture + gallery
 
@@ -132,7 +132,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] Admin route has a left live-feed pane and a right send-to-Projector pane
 - [x] Image / Code tabs in the send pane (draft UI only)
 - [x] Projector route uses the user-facing name and preserves `/display` as a redirect alias
-- [ ] Live feed rendering (M2)
+- [x] Live feed rendering (M2, web): remote track + pairing state + data-channel role check
 - [ ] Capture and send actions enabled (M3/M4)
 - [ ] Projector orientation and full-screen behavior
 - [ ] Mobile Admin layout verification on a physical device
@@ -148,6 +148,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] Enable GitHub Pages (Source: GitHub Actions)
 - [x] First successful `Deploy web` run
 - [x] Verify the live key gate at `https://naveenmorla1901.github.io/omni-relay/`
+- [x] Pages SPA fallback (`404.html`) so direct role URLs survive a reload
 - [ ] Android release keystore + signing secrets
 - [ ] GitHub Actions APK build
 - [ ] Upload signed APK to GitHub Releases
@@ -163,13 +164,15 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **GitHub Pages base path:** `EXPO_BASE_URL=/omni-relay` is injected by the deploy workflow so local dev stays at the root.
 - **APK path:** build locally or with GitHub Actions; do not require EAS cloud. Publish to GitHub Releases.
 - **Default pairing:** QR (serverless). Room-code signaling is optional until M8.
+- **Web-first live feed:** the browser Recorder and Admin are the v1 default because GitHub Pages is the current distribution surface. Native `IConnection`/`ICameraSource` implementations stay behind the same interfaces and are deferred until the native prebuild/APK phase.
+- **Pairing codes:** gzip + base64url (`CR1.` prefix). Both QR and copy/paste are first-class; the QR is a convenience, not a requirement.
 
 ## Open questions / decisions needed
 
 - [x] GitHub Pages is the Admin/Projector web target; the live site is up.
+- [x] Web Recorder is supported in v1; native is an optimization/APK path, not a requirement for the browser workflow.
 - [ ] Decide whether a stronger pairing PIN/session secret is needed for real access control.
 - [ ] Choose the Android application ID if `com.clearrelay.app` is not desired.
-- [ ] Decide whether web Recorder is supported in v1 or native-only.
 
 ## Session log
 
@@ -177,3 +180,4 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **2026-10-19** — Initialized git, committed M0, and pushed `main` to `https://github.com/naveenmorla1901/omni-relay`. Added the GitHub Pages deploy workflow, dynamic `EXPO_BASE_URL` support, fail-closed production access keys, and the private-repo Pages notes. Pages activation and the access-key secret are the remaining deploy steps.
 - **2026-10-19** — Repo made public; CI is green. `Deploy web` is blocked only on the missing `EXPO_PUBLIC_ACCESS_KEYS` repository secret, so Pages is not enabled yet.
 - **2026-10-19** — Moved to a built-in client-side access key (`ACCESS_KEY`), removed the Pages secret requirement, and simplified the gate. No server-side key storage. Pages was enabled; `Deploy web` succeeded and the live key gate at `https://naveenmorla1901.github.io/omni-relay/` was verified. The build is still the M0 UI shell: no WebRTC, camera, media, or APK.
+- **2026-10-19** — Implemented the web half of M1/M2: browser `IConnection` (data channel + video transceiver + encoder clarity params), non-trickle ICE with timeout, gzip/base64url pairing codes (`CR1.`), `ICameraSource` web implementation (`getUserMedia`), QR generate/scan, manual copy/paste fallback, and working Recorder → Admin pairing/live-feed screens. Added 4 signal unit tests (14 total). Verified with a two-context headless E2E run: offer → answer → connect, data-channel `hello`, and live 320×240 video on both sides. Native implementations remain stubs; M3 capture/gallery is next.

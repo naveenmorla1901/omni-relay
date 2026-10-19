@@ -68,8 +68,21 @@ private repository cannot publish Pages. Options:
 > A Pages site is public on the internet. The access-key gate is client-side; anyone who has the URL
 > can load the app shell and attempt keys.
 
-HTTPS is required for browser camera access. The Recorder is native-first; Admin and Projector only
-need WebRTC.
+HTTPS is required for browser camera access. Both Recorder and Admin work in the browser today; the
+native camera source is an APK-phase optimization behind the same `ICameraSource` interface.
+
+## Using the live feed (current web build)
+
+1. Open the deployed URL on both devices and enter the access key.
+2. On the Recorder phone: **Recorder → Create invite**. Show or copy the invite code.
+3. On Admin: **Scan Recorder invite** (or paste the invite code) and **Create answer**.
+4. On the Recorder: **Scan QR** or paste the answer code, then **Connect**.
+5. The rear camera starts and Admin renders the live feed. Use **Copy code** at any step if QR
+   scanning fails.
+
+Pairing codes are gzip + base64url (`CR1.` prefix) and currently fit in a single QR code; a chunked
+QR fallback is tracked in `PROJECT-STATUS.md` if the payload grows. Keep both browser tabs awake:
+locking the phone screen pauses the camera track.
 
 ## Android APK
 
@@ -112,7 +125,7 @@ an installed APK under the same application ID.
 
 ## Release checklist
 
-- [ ] Set a real `EXPO_PUBLIC_ACCESS_KEYS` value
+- [ ] Change `ACCESS_KEY` in `src/config/index.ts` if rotating the key, then redeploy
 - [ ] Bump app version / Android versionCode
 - [ ] Build and sign the release APK
 - [ ] Install the APK on a physical device and run the clarity test
