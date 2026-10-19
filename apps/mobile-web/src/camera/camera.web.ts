@@ -15,13 +15,21 @@ class WebCameraSource implements ICameraSource {
       return [];
     }
 
+    // A short getUserMedia call is required before enumerateDevices returns labels.
+    try {
+      const probe = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+      for (const t of probe.getTracks()) t.stop();
+    } catch {
+      // If permission is already granted, labels are available without this probe.
+    }
+
     const devices = await navigator.mediaDevices.enumerateDevices();
     return devices
-      .filter((device) => device.kind === 'videoinput')
-      .map((device, index) => ({
-        id: device.deviceId,
-        name: device.label || `Camera ${index + 1}`,
-        position: guessPosition(device.label),
+      .filter((d) => d.kind === 'videoinput')
+      .map((d, i) => ({
+        id: d.deviceId,
+        name: d.label || `Camera ${i + 1}`,
+        position: guessPosition(d.label),
       }));
   }
 
@@ -40,19 +48,44 @@ class WebCameraSource implements ICameraSource {
 
     this.stop();
 
-    const video: MediaTrackConstraints = {
-      width: { ideal: format.width },
-      height: { ideal: format.height },
-      frameRate: { ideal: format.fps, max: format.fps },
-    };
+    // Try progressively relaxed constraints so we always get a stream.
+    // Attempt 1: preferred rear camera + HD minimum floor
+    // Attempt 2: drop the min floor (some browsers reject it even when they support HD)
+    // Attempt 3: bare fallback (any camera, any resolution)
+    const attempts: MediaTrackConstraints[] = [
+      {
+        width: { min: 1280, ideal: format.width },
+        height: { min: 720, ideal: format.height },
+        frameRate: { ideal: format.fps, max: format.fps },
+        ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
+      },
+      {
+        width: { ideal: format.width },
+        height: { ideal: format.height },
+        frameRate: { ideal: format.fps, max: format.fps },
+        ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
+      },
+      {
+        facingMode: { ideal: 'environment' },
+      },
+    ];
 
-    if (deviceId) {
-      video.deviceId = { exact: deviceId };
-    } else {
-      video.facingMode = { ideal: 'environment' };
+    let lastError: unknown;
+    for (const constraints of attempts) {
+      try {
+        this.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: constraints });
+        return;
+      } catch (err) {
+        lastError = err;
+        const name = err instanceof DOMException ? err.name : '';
+        // Only retry on constraint / device errors, not permission errors.
+        if (name !== 'OverconstrainedError' && name !== 'NotFoundError' && name !== 'NotReadableError') {
+          throw err;
+        }
+      }
     }
 
-    this.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video });
+    throw lastError;
   }
 
   stop(): void {
@@ -65,35 +98,59 @@ class WebCameraSource implements ICameraSource {
 
   async lockExposureFocusWhiteBalance(): Promise<void> {
     const track = this.getVideoTrack();
-    if (!track) {
-      return;
-    }
+    if (!track) return;
 
     try {
       await track.applyConstraints({
         advanced: [
-          { exposureMode: 'manual' },
-          { focusMode: 'manual' },
-          { whiteBalanceMode: 'manual' },
+          { exposureMode: 'manual' } as MediaTrackConstraintSet,
+          { focusMode: 'manual' } as MediaTrackConstraintSet,
+          { whiteBalanceMode: 'manual' } as MediaTrackConstraintSet,
         ],
-      } as unknown as MediaTrackConstraints);
+      });
     } catch {
-      // Safari and some Android browsers do not expose these controls.
+      // Safari and many Android browsers do not expose these controls.
     }
   }
 
   async setTorch(enabled: boolean): Promise<void> {
     const track = this.getVideoTrack();
-    if (!track) {
-      return;
-    }
+    if (!track) return;
 
     try {
       await track.applyConstraints({
-        advanced: [{ torch: enabled }],
-      } as unknown as MediaTrackConstraints);
+        advanced: [{ torch: enabled } as MediaTrackConstraintSet],
+      });
     } catch {
-      // Torch control is best-effort on the web.
+      // Best-effort on the web.
+    }
+  }
+
+  /** Try to switch between front and rear camera while keeping the stream running. */
+  async flipCamera(): Promise<void> {
+    const track = this.getVideoTrack();
+    if (!track) return;
+
+    const current = track.getSettings().facingMode;
+    const next = current === 'environment' ? 'user' : 'environment';
+
+    try {
+      await track.applyConstraints({ facingMode: { exact: next } });
+    } catch {
+      // Some browsers require a full restart to switch cameras.
+      const format: CameraFormat = {
+        width: track.getSettings().width ?? CONFIG.CAPTURE_RESOLUTION.width,
+        height: track.getSettings().height ?? CONFIG.CAPTURE_RESOLUTION.height,
+        fps: CONFIG.TARGET_FPS,
+      };
+      const overrides: MediaTrackConstraints = {
+        width: { ideal: format.width },
+        height: { ideal: format.height },
+        frameRate: { ideal: format.fps, max: format.fps },
+        facingMode: { ideal: next },
+      };
+      this.stop();
+      this.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: overrides });
     }
   }
 
@@ -101,8 +158,20 @@ class WebCameraSource implements ICameraSource {
     return this.stream;
   }
 
+  getActualSettings(): { width: number; height: number; fps: number; facingMode?: string } | null {
+    const track = this.getVideoTrack();
+    if (!track) return null;
+    const s = track.getSettings();
+    return {
+      width: s.width ?? 0,
+      height: s.height ?? 0,
+      fps: Math.round((s.frameRate ?? 0) * 10) / 10,
+      facingMode: s.facingMode,
+    };
+  }
+
   onFrame(): () => void {
-    // CV frame processing is M5. The video track alone is enough for the feed.
+    // CV frame processing is M5; video track alone drives the feed for now.
     return () => undefined;
   }
 
@@ -112,13 +181,9 @@ class WebCameraSource implements ICameraSource {
 }
 
 function guessPosition(label: string): CameraDevice['position'] {
-  const normalized = label.toLowerCase();
-  if (normalized.includes('back') || normalized.includes('rear') || normalized.includes('environment')) {
-    return 'back';
-  }
-  if (normalized.includes('front') || normalized.includes('user') || normalized.includes('face')) {
-    return 'front';
-  }
+  const l = label.toLowerCase();
+  if (l.includes('back') || l.includes('rear') || l.includes('environment')) return 'back';
+  if (l.includes('front') || l.includes('user') || l.includes('face')) return 'front';
   return 'external';
 }
 

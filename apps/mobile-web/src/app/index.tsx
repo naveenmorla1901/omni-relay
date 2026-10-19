@@ -1,5 +1,5 @@
 import { Link } from 'expo-router';
-import { Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { Linking, Pressable, ScrollView, StyleSheet, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AccessGate } from '@/components/access-gate';
@@ -100,11 +100,30 @@ export default function RolePickerScreen() {
             ))}
           </View>
 
+          {/* Download strip */}
+          <View style={[styles.downloadRow, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
+            <View style={styles.downloadCopy}>
+              <ThemedText type="smallBold">Native app</ThemedText>
+              <ThemedText type="small" themeColor="textSecondary">
+                Better camera control on Android. Install the APK from the latest GitHub release.
+              </ThemedText>
+            </View>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void Linking.openURL('https://github.com/naveenmorla1901/omni-relay/releases/latest')}
+              style={({ pressed }) => [
+                styles.downloadBtn,
+                { backgroundColor: theme.accent, opacity: pressed ? 0.8 : 1 },
+              ]}>
+              <ThemedText type="smallBold" style={{ color: theme.accentText }}>Download APK</ThemedText>
+            </Pressable>
+          </View>
+
           <View style={[styles.footer, { borderColor: theme.border }]}>
             <View style={styles.footerCopy}>
               <ThemedText type="smallBold">Pairing</ThemedText>
               <ThemedText type="small" themeColor="textSecondary">
-                Choose QR (serverless) or a room code via the optional signaling helper.
+                Open Admin, tap "Create session" for a 6-char code, then enter it in Recorder or Projector.
               </ThemedText>
             </View>
             <Link href="/pair" asChild>
@@ -201,6 +220,26 @@ const styles = StyleSheet.create({
   pairButton: {
     borderWidth: 1,
     borderRadius: 12,
+    paddingHorizontal: Spacing.four,
+    paddingVertical: Spacing.three,
+  },
+  downloadRow: {
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: Spacing.four,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: Spacing.three,
+  },
+  downloadCopy: {
+    gap: Spacing.one,
+    flexShrink: 1,
+    maxWidth: 480,
+  },
+  downloadBtn: {
+    borderRadius: 10,
     paddingHorizontal: Spacing.four,
     paddingVertical: Spacing.three,
   },

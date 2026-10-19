@@ -2,222 +2,330 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { createConnection } from '@/connection';
 import type { ConnectionState, IConnection } from '@/connection/IConnection';
-import type { Role, SignalingMode } from '@/protocol/messages';
+import { SignalClient } from '@/connection/signal-ws';
+import { CONFIG } from '@/config';
+import type { Role } from '@/protocol/messages';
 import { parseMessage, serializeMessage } from '@/protocol/messages';
+
+// ── Types ─────────────────────────────────────────────────────────────────────
 
 export type PairingPhase =
   | 'idle'
-  | 'creating-invite'
-  | 'waiting-for-answer'
-  | 'joining'
-  | 'waiting-for-connection'
+  | 'creating'               // Admin: connecting to server + creating room
+  | 'waiting-for-peer'       // Admin: room open, waiting for devices to join
+  | 'joining'                // Recorder/Display: connecting + joining room
+  | 'exchanging'             // SDP offer/answer in flight
+  | 'connecting'             // ICE checks running
   | 'connected'
   | 'failed';
 
-type PairingRole = Extract<Role, 'recorder' | 'admin'>;
+export type PairingRole = Extract<Role, 'recorder' | 'admin' | 'display'>;
 
-type UsePairingResult = {
+export type UsePairingResult = {
   phase: PairingPhase;
   connectionState: ConnectionState;
-  localCode: string | null;
+
+  /** 6-character room code Admin shares with the other devices. */
+  roomCode: string | null;
+
+  /** Live video stream from the Recorder (Admin side only). */
   remoteStream: MediaStream | null;
+
+  /** Whether the Recorder has joined the WS room. */
+  recorderJoined: boolean;
+
+  /** Whether the Projector/Display has joined the WS room. */
+  projectorJoined: boolean;
+
   peerRole: Role | null;
   error: string | null;
   busy: boolean;
-  createInvite: () => Promise<void>;
-  joinInvite: (code: string) => Promise<void>;
-  acceptAnswer: (code: string) => Promise<void>;
-  attachVideoTrack: (track: MediaStreamTrack) => void;
-  reset: () => void;
+
+  /** Admin: create a room and get a shareable code. */
+  createRoom(): Promise<void>;
+
+  /** Recorder / Display: join Admin's room by code. */
+  joinRoom(code: string): Promise<void>;
+
+  /** Recorder: attach local camera track to the WebRTC connection. */
+  attachVideoTrack(track: MediaStreamTrack): void;
+
+  /** Close everything and return to idle. */
+  reset(): void;
 };
 
-const SIGNALING_MODE: SignalingMode = 'qr';
+// ── Hook ──────────────────────────────────────────────────────────────────────
 
 export function usePairing(role: PairingRole): UsePairingResult {
   const [phase, setPhase] = useState<PairingPhase>('idle');
   const [connectionState, setConnectionState] = useState<ConnectionState>('new');
-  const [localCode, setLocalCode] = useState<string | null>(null);
+  const [roomCode, setRoomCode] = useState<string | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
+  const [recorderJoined, setRecorderJoined] = useState(false);
+  const [projectorJoined, setProjectorJoined] = useState(false);
   const [peerRole, setPeerRole] = useState<Role | null>(null);
   const [error, setError] = useState<string | null>(null);
+
+  const signalRef = useRef<SignalClient | null>(null);
   const connectionRef = useRef<IConnection | null>(null);
 
-  const disposeConnection = useCallback(() => {
-    const connection = connectionRef.current;
+  // ── Cleanup ────────────────────────────────────────────────────────────────
+
+  const disposeAll = useCallback(() => {
+    signalRef.current?.close();
+    signalRef.current = null;
+    connectionRef.current?.close();
     connectionRef.current = null;
-    connection?.close();
   }, []);
 
-  const openConnection = useCallback(() => {
-    const connection = createConnection();
-    connectionRef.current = connection;
+  const reset = useCallback(() => {
+    disposeAll();
+    setPhase('idle');
+    setConnectionState('new');
+    setRoomCode(null);
+    setRemoteStream(null);
+    setRecorderJoined(false);
+    setProjectorJoined(false);
+    setPeerRole(null);
+    setError(null);
+  }, [disposeAll]);
 
-    connection.onState((nextState) => {
-      if (connectionRef.current !== connection) {
-        return;
-      }
+  useEffect(() => disposeAll, [disposeAll]);
 
-      setConnectionState(nextState);
+  // ── WebRTC connection factory ───────────────────────────────────────────────
 
-      if (nextState === 'connected') {
+  const openConnection = useCallback((): IConnection => {
+    connectionRef.current?.close();
+
+    const conn = createConnection();
+    connectionRef.current = conn;
+
+    conn.onState((state) => {
+      if (connectionRef.current !== conn) return;
+      setConnectionState(state);
+      if (state === 'connected') {
         setPhase('connected');
-        connection.sendData(
-          serializeMessage({ v: 1, t: 'hello', role, caps: ['video', 'control'] }),
-        );
-      } else if (nextState === 'failed') {
+        conn.sendData(serializeMessage({ v: 1, t: 'hello', role, caps: ['video', 'control'] }));
+      } else if (state === 'failed') {
         setPhase('failed');
-        setError('The peer connection failed. Check that both devices are online and try again.');
+        setError('WebRTC connection failed. Make sure both devices are online.');
       }
     });
 
-    connection.onRemoteTrack((stream) => {
-      if (connectionRef.current === connection) {
-        setRemoteStream(stream);
-      }
+    conn.onRemoteTrack((stream) => {
+      if (connectionRef.current === conn) setRemoteStream(stream);
     });
 
-    connection.onData((message) => {
-      if (connectionRef.current !== connection || typeof message !== 'string') {
-        return;
-      }
-
-      const parsed = parseMessage(message);
-      if (parsed?.t === 'hello') {
-        setPeerRole(parsed.role);
-      }
+    conn.onData((msg) => {
+      if (connectionRef.current !== conn || typeof msg !== 'string') return;
+      const parsed = parseMessage(msg);
+      if (parsed?.t === 'hello') setPeerRole(parsed.role);
     });
 
-    return connection;
+    return conn;
   }, [role]);
 
-  const createInvite = useCallback(async () => {
-    disposeConnection();
-    setError(null);
-    setLocalCode(null);
-    setRemoteStream(null);
-    setPeerRole(null);
-    setConnectionState('new');
-    setPhase('creating-invite');
+  // ── Admin: create room ─────────────────────────────────────────────────────
 
-    const connection = openConnection();
-
-    try {
-      await connection.init(role, SIGNALING_MODE);
-      const offer = await connection.createOffer();
-
-      if (connectionRef.current !== connection) {
-        return;
-      }
-
-      setLocalCode(offer);
-      setPhase('waiting-for-answer');
-    } catch (inviteError) {
-      if (connectionRef.current === connection) {
-        connection.close();
-        connectionRef.current = null;
-        setPhase('failed');
-        setError(toErrorMessage(inviteError));
-      }
-    }
-  }, [disposeConnection, openConnection, role]);
-
-  const joinInvite = useCallback(
-    async (code: string) => {
-      disposeConnection();
-      setError(null);
-      setLocalCode(null);
-      setRemoteStream(null);
-      setPeerRole(null);
-      setConnectionState('new');
-      setPhase('joining');
-
-      const connection = openConnection();
-
-      try {
-        await connection.init('admin', SIGNALING_MODE);
-        const answer = await connection.acceptOffer(code);
-
-        if (connectionRef.current !== connection) {
-          return;
-        }
-
-        setLocalCode(answer);
-        setPhase('waiting-for-connection');
-      } catch (joinError) {
-        if (connectionRef.current === connection) {
-          connection.close();
-          connectionRef.current = null;
-          setPhase('failed');
-          setError(toErrorMessage(joinError));
-        }
-      }
-    },
-    [disposeConnection, openConnection],
-  );
-
-  const acceptAnswer = useCallback(async (code: string) => {
-    const connection = connectionRef.current;
-    if (!connection) {
-      setError('Create an invite first, then scan the Admin answer.');
+  const createRoom = useCallback(async () => {
+    const url = CONFIG.SIGNALING_WS_URL;
+    if (!url) {
+      setPhase('failed');
+      setError('No signaling server configured. Set EXPO_PUBLIC_SIGNALING_URL and rebuild.');
       return;
     }
 
+    disposeAll();
     setError(null);
-    setPhase('waiting-for-connection');
+    setRoomCode(null);
+    setRecorderJoined(false);
+    setProjectorJoined(false);
+    setRemoteStream(null);
+    setPeerRole(null);
+    setConnectionState('new');
+    setPhase('creating');
+
+    const signal = new SignalClient();
+    signalRef.current = signal;
 
     try {
-      await connection.acceptAnswer(code);
-    } catch (answerError) {
-      if (connectionRef.current === connection) {
+      await signal.connect(url);
+    } catch (err) {
+      if (signalRef.current === signal) {
         setPhase('failed');
-        setError(toErrorMessage(answerError));
+        setError(toMsg(err));
+        signal.close();
+        signalRef.current = null;
       }
+      return;
     }
-  }, []);
+
+    signal.createRoom();
+
+    signal.onMsg(async (msg) => {
+      if (signalRef.current !== signal) return;
+
+      if (msg.t === 'created') {
+        setRoomCode(msg.code);
+        setPhase('waiting-for-peer');
+      }
+
+      else if (msg.t === 'joined') {
+        if (msg.role === 'recorder') {
+          setRecorderJoined(true);
+          // Recorder will send us their offer; set up the connection now so
+          // it is ready to accept it.
+          openConnection();
+          await connectionRef.current!.init('admin', 'ws');
+        } else if (msg.role === 'display') {
+          setProjectorJoined(true);
+        }
+      }
+
+      else if (msg.t === 'sdp' && msg.from === 'recorder' && msg.kind === 'offer') {
+        const conn = connectionRef.current;
+        if (!conn) return;
+        setPhase('exchanging');
+        try {
+          const answer = await conn.acceptOffer(msg.sdp);
+          signal.relaySdp('recorder', answer, 'answer');
+          setPhase('connecting');
+        } catch (err) {
+          setPhase('failed');
+          setError(toMsg(err));
+        }
+      }
+
+      else if (msg.t === 'left') {
+        if (msg.role === 'recorder') setRecorderJoined(false);
+        else if (msg.role === 'display') setProjectorJoined(false);
+      }
+
+      else if (msg.t === 'error') {
+        setPhase('failed');
+        setError(msg.msg);
+      }
+    });
+
+    signal.onDisconnect(() => {
+      if (signalRef.current === signal && phase !== 'connected') {
+        setPhase('failed');
+        setError('Lost connection to the signaling server.');
+      }
+    });
+  }, [disposeAll, openConnection, phase]);
+
+  // ── Recorder / Display: join room ──────────────────────────────────────────
+
+  const joinRoom = useCallback(async (code: string) => {
+    const url = CONFIG.SIGNALING_WS_URL;
+    if (!url) {
+      setPhase('failed');
+      setError('No signaling server configured. Set EXPO_PUBLIC_SIGNALING_URL and rebuild.');
+      return;
+    }
+
+    disposeAll();
+    setError(null);
+    setRoomCode(null);
+    setConnectionState('new');
+    setRemoteStream(null);
+    setPeerRole(null);
+    setPhase('joining');
+
+    const signal = new SignalClient();
+    signalRef.current = signal;
+
+    try {
+      await signal.connect(url);
+    } catch (err) {
+      if (signalRef.current === signal) {
+        setPhase('failed');
+        setError(toMsg(err));
+        signal.close();
+        signalRef.current = null;
+      }
+      return;
+    }
+
+    signal.joinRoom(code, role === 'admin' ? 'admin' : role === 'display' ? 'display' : 'recorder');
+
+    signal.onMsg(async (msg) => {
+      if (signalRef.current !== signal) return;
+
+      if (msg.t === 'room-ok') {
+        if (role === 'recorder') {
+          // Recorder creates the offer and sends it to Admin.
+          setPhase('exchanging');
+          const conn = openConnection();
+          try {
+            await conn.init('recorder', 'ws');
+            const offer = await conn.createOffer();
+            signal.relaySdp('admin', offer, 'offer');
+            setPhase('connecting');
+          } catch (err) {
+            if (connectionRef.current === conn) {
+              setPhase('failed');
+              setError(toMsg(err));
+            }
+          }
+        } else {
+          // Display joined the room — connection confirmed, no WebRTC yet (M4).
+          setPhase('connected');
+        }
+      }
+
+      else if (msg.t === 'sdp' && msg.from === 'admin' && msg.kind === 'answer') {
+        const conn = connectionRef.current;
+        if (!conn) return;
+        try {
+          await conn.acceptAnswer(msg.sdp);
+        } catch (err) {
+          setPhase('failed');
+          setError(toMsg(err));
+        }
+      }
+
+      else if (msg.t === 'error') {
+        setPhase('failed');
+        setError(msg.msg);
+      }
+    });
+
+    signal.onDisconnect(() => {
+      if (signalRef.current === signal && phase !== 'connected') {
+        setPhase('failed');
+        setError('Lost connection to the signaling server.');
+      }
+    });
+  }, [disposeAll, openConnection, phase, role]);
+
+  // ── Recorder: attach camera track ─────────────────────────────────────────
 
   const attachVideoTrack = useCallback((track: MediaStreamTrack) => {
     connectionRef.current?.attachVideoTrack(track);
   }, []);
 
-  const reset = useCallback(() => {
-    disposeConnection();
-    setPhase('idle');
-    setConnectionState('new');
-    setLocalCode(null);
-    setRemoteStream(null);
-    setPeerRole(null);
-    setError(null);
-  }, [disposeConnection]);
-
-  useEffect(() => {
-    return () => {
-      disposeConnection();
-    };
-  }, [disposeConnection]);
+  // ── Result ─────────────────────────────────────────────────────────────────
 
   return {
     phase,
     connectionState,
-    localCode,
+    roomCode,
     remoteStream,
+    recorderJoined,
+    projectorJoined,
     peerRole,
     error,
-    busy:
-      phase === 'creating-invite' ||
-      phase === 'joining' ||
-      phase === 'waiting-for-connection',
-    createInvite,
-    joinInvite,
-    acceptAnswer,
+    busy: phase === 'creating' || phase === 'joining' || phase === 'exchanging' || phase === 'connecting',
+    createRoom,
+    joinRoom,
     attachVideoTrack,
     reset,
   };
 }
 
-function toErrorMessage(error: unknown): string {
-  if (error instanceof Error && error.message) {
-    return error.message;
-  }
-
-  return 'Something went wrong while pairing. Try again.';
+function toMsg(err: unknown): string {
+  if (err instanceof Error && err.message) return err.message;
+  return 'Something went wrong. Try again.';
 }

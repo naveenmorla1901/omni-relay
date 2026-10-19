@@ -5,6 +5,7 @@ import { ThemedText } from '@/components/themed-text';
 type VideoViewProps = {
   stream: MediaStream | null;
   placeholder?: string;
+  onVideoElement?: (el: null) => void;
 };
 
 /** Native video rendering will be added with the react-native-webrtc integration. */

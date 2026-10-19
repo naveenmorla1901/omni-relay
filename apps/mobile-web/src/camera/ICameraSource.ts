@@ -17,4 +17,10 @@ export interface ICameraSource {
 
   getStream(): MediaStream | null;
   onFrame(callback: (frame: VideoFrame) => void): () => void;
+
+  /** Returns the actual resolution/fps/facingMode the browser granted. Null if no stream. */
+  getActualSettings(): { width: number; height: number; fps: number; facingMode?: string } | null;
+
+  /** Web-only: toggle front/rear camera. No-op on native. */
+  flipCamera?(): Promise<void>;
 }

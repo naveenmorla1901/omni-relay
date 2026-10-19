@@ -20,11 +20,9 @@ class WebConnection implements IConnection {
   private dataCallback: ((message: ArrayBuffer | string) => void) | null = null;
   private stateCallback: ((state: ConnectionState) => void) | null = null;
 
-  async init(_role: Role, mode: SignalingMode): Promise<void> {
-    if (mode !== 'qr') {
-      throw new Error('Room-code signaling is not available yet. Use QR/manual pairing.');
-    }
-
+  async init(_role: Role, _mode: SignalingMode): Promise<void> {
+    // Signaling transport (QR vs WS) is handled at the hook level.
+    // The RTCPeerConnection setup is identical for both modes.
     if (!globalThis.RTCPeerConnection) {
       throw new Error('This browser does not support WebRTC.');
     }
@@ -219,6 +217,12 @@ class WebConnection implements IConnection {
               raw === 'new'
             ? raw
             : 'connecting';
+
+    // Re-apply clarity encoder params once DTLS handshake is complete — setParameters
+    // is most reliable after the sender is fully negotiated and connected.
+    if (state === 'connected' && this.videoSender) {
+      void this.configureVideoSender();
+    }
 
     this.stateCallback(state);
   }

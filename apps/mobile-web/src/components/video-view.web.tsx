@@ -6,16 +6,21 @@ import { ThemedText } from '@/components/themed-text';
 type VideoViewProps = {
   stream: MediaStream | null;
   placeholder?: string;
+  /** Called with the underlying <video> element (or null on unmount). Lets callers capture frames. */
+  onVideoElement?: (el: HTMLVideoElement | null) => void;
 };
 
-export function VideoView({ stream, placeholder = 'No video yet' }: VideoViewProps) {
+export function VideoView({ stream, placeholder = 'No video yet', onVideoElement }: VideoViewProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  const setRef = (el: HTMLVideoElement | null) => {
+    videoRef.current = el;
+    onVideoElement?.(el);
+  };
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) {
-      return;
-    }
+    if (!video) return;
 
     if (video.srcObject !== stream) {
       video.srcObject = stream;
@@ -32,11 +37,17 @@ export function VideoView({ stream, placeholder = 'No video yet' }: VideoViewPro
     };
   }, [stream]);
 
+  // Notify parent when the element unmounts.
+  useEffect(() => {
+    return () => onVideoElement?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   return (
     <View style={styles.container}>
       {stream ? (
         <video
-          ref={videoRef}
+          ref={setRef}
           autoPlay
           muted
           playsInline

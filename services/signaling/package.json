@@ -1,0 +1,21 @@
+{
+  "name": "@clearrelay/signaling",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Minimal WebSocket signaling relay — forwards SDP offers/answers between peers by room code. Never sees media.",
+  "main": "dist/server.js",
+  "scripts": {
+    "start": "node dist/server.js",
+    "dev": "ts-node server.ts",
+    "build": "tsc"
+  },
+  "dependencies": {
+    "ws": "^8.17.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.12",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.3"
+  }
+}
