@@ -7,8 +7,8 @@
 
 **Last updated:** 2026-10-19
 **Current milestone:** M0 scaffold complete on web; M1 (WebRTC loopback + QR pairing) is next.
-**Current stop point:** Access gate, Projector naming, and the Admin/Projector UI skeletons are in place. No WebRTC, camera, or media code exists yet.
-**Next action:** Implement the web `IConnection` data-channel path and the QR offer/answer loop (M1), then verify two browser tabs exchange a message.
+**Current stop point:** Access gate, Projector naming, Admin/Projector UI skeletons, GitHub push, and the Pages deployment workflow are in place. No WebRTC, camera, or media code exists yet.
+**Next action:** Set the `EXPO_PUBLIC_ACCESS_KEYS` repo secret and enable GitHub Pages, then implement M1 (web `IConnection` + QR offer/answer).
 
 ## How to update this file
 
@@ -139,10 +139,13 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 
 ## Distribution
 
-- [ ] Initialize the local git repository and create the GitHub repo
+- [x] Initialize the local git repository and push `main` to GitHub
 - [x] GitHub Actions CI workflow: typecheck, lint, tests, web export
 - [ ] First green CI run on GitHub
-- [ ] GitHub Pages web deployment (recommended static host)
+- [x] GitHub Pages deployment workflow with `/omni-relay` base path
+- [ ] Add the `EXPO_PUBLIC_ACCESS_KEYS` repository secret
+- [ ] Enable GitHub Pages (Source: GitHub Actions)
+- [!] Private-repo Pages needs GitHub Pro/Team/Enterprise; otherwise make the repo public or use Cloudflare Pages
 - [ ] Android release keystore + signing secrets
 - [ ] GitHub Actions APK build
 - [ ] Upload signed APK to GitHub Releases
@@ -154,7 +157,8 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **Serverless definition:** no cloud backend, database, or media server. Static hosting for the web UI is allowed; media/data stays peer-to-peer.
 - **Web hosting recommendation:** GitHub Pages for the static Expo web export. It is free, HTTPS, and has no runtime backend. The optional signaling helper stays self-hosted for remote pairing.
 - **Projector naming:** UI and route use **Projector**; the wire role remains `display` for compatibility with the plan/protocol.
-- **Access key:** a local front-door for casual access control, not authentication. Set `EXPO_PUBLIC_ACCESS_KEYS` before any shared build.
+- **Access key:** a local front-door for casual access control, not authentication. Set `EXPO_PUBLIC_ACCESS_KEYS` before any shared build. Development uses `clearrelay-demo`; production builds fail closed without the variable.
+- **GitHub Pages base path:** `EXPO_BASE_URL=/omni-relay` is injected by the deploy workflow so local dev stays at the root.
 - **APK path:** build locally or with GitHub Actions; do not require EAS cloud. Publish to GitHub Releases.
 - **Default pairing:** QR (serverless). Room-code signaling is optional until M8.
 
@@ -168,3 +172,4 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 ## Session log
 
 - **2026-10-19** — Scaffolded the Expo workspace, role routes, protocol/config modules, tests, lint, and static web export. Added the access-key gate (including a guard for direct role URLs), Projector naming, Admin/Projector UI skeletons, app identity, project status tracker, deployment notes, and a GitHub Actions CI workflow. Verified with 10 unit tests, typecheck, lint, and web export. Next: M1 WebRTC loopback.
+- **2026-10-19** — Initialized git, committed M0, and pushed `main` to `https://github.com/naveenmorla1901/omni-relay`. Added the GitHub Pages deploy workflow, dynamic `EXPO_BASE_URL` support, fail-closed production access keys, and the private-repo Pages notes. Pages activation and the access-key secret are the remaining deploy steps.

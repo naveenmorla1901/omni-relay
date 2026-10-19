@@ -12,7 +12,8 @@ ClearRelay is a greenfield Expo + WebRTC app. `ClearRelay-Build-Plan.md` is the 
 - Node `22.13+` is required by Expo 58 (`.nvmrc` pins 22.13.0). Older Node produces unsupported-engine warnings and may break newer tooling.
 - On Windows, npm 10 can miss platform-native optional binaries. If Vitest or a web export fails with a missing `*.node` module, install that exact package at the root with `npm i --no-save <pkg>@<version>`.
 - Native projects are not committed. After native modules land, use `npx expo prebuild` then `npx expo run:ios` / `npx expo run:android`; iOS requires macOS. Expo Go cannot load Vision Camera or `react-native-webrtc`.
-- Access keys come from the build-time `EXPO_PUBLIC_ACCESS_KEYS` variable (comma-separated). `clearrelay-demo` is the dev fallback only. Distribution, GitHub Pages, and APK signing are covered in `docs/deployment.md`.
+- Access keys come from the build-time `EXPO_PUBLIC_ACCESS_KEYS` variable (comma-separated). `clearrelay-demo` is the dev fallback only; production builds without the variable fail closed. Distribution, GitHub Pages, and APK signing are covered in `docs/deployment.md`.
+- `EXPO_BASE_URL` adds a static export base path (the GitHub Pages workflow sets `/omni-relay`). Do not set it for local dev.
 
 ```bash
 npm run web            # Expo web dev server

@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
-import { USING_DEFAULT_ACCESS_KEY } from '@/config';
+import { ACCESS_KEYS, USING_DEFAULT_ACCESS_KEY } from '@/config';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { useSessionStore } from '@/store/session';
@@ -25,9 +25,10 @@ export function AccessGate() {
   const [error, setError] = useState<string | null>(null);
 
   const canSubmit = key.trim().length > 0;
+  const configured = ACCESS_KEYS.length > 0;
 
   function submit() {
-    if (!canSubmit) {
+    if (!canSubmit || !configured) {
       return;
     }
 
@@ -92,13 +93,13 @@ export function AccessGate() {
 
               <Pressable
                 accessibilityRole="button"
-                disabled={!canSubmit}
+                disabled={!canSubmit || !configured}
                 onPress={submit}
                 style={({ pressed }) => [
                   styles.button,
                   {
                     backgroundColor: theme.accent,
-                    opacity: !canSubmit ? 0.45 : pressed ? 0.8 : 1,
+                    opacity: !canSubmit || !configured ? 0.45 : pressed ? 0.8 : 1,
                   },
                 ]}>
                 <ThemedText type="smallBold" style={{ color: theme.accentText }}>
@@ -111,7 +112,11 @@ export function AccessGate() {
                   The key is checked on this device and is not sent anywhere. Closing the app locks
                   the session again.
                 </ThemedText>
-                {__DEV__ && USING_DEFAULT_ACCESS_KEY ? (
+                {!configured ? (
+                  <ThemedText type="small" style={{ color: theme.warning }}>
+                    This build has no access key configured. Set EXPO_PUBLIC_ACCESS_KEYS and rebuild.
+                  </ThemedText>
+                ) : __DEV__ && USING_DEFAULT_ACCESS_KEY ? (
                   <ThemedText type="small" style={{ color: theme.warning }}>
                     Development key is active. Set EXPO_PUBLIC_ACCESS_KEYS before sharing a build.
                   </ThemedText>

@@ -35,8 +35,8 @@ npm run export:web
 EXPO_PUBLIC_ACCESS_KEYS="family-key-1,family-key-2" npm run export:web
 ```
 
-Without the variable, the development fallback `clearrelay-demo` is used. Set the variable before
-any build you share.
+Without the variable, the development server uses `clearrelay-demo`. Production exports and release
+builds fail closed when the variable is missing, so set the variable before any build you share.
 
 > The key is a local front-door, not authentication. It is embedded in the JS bundle and can be
 > extracted from a web build or APK. It keeps casual users out of the role picker; it does not
@@ -44,22 +44,34 @@ any build you share.
 
 ## GitHub Pages
 
-1. Set `EXPO_PUBLIC_ACCESS_KEYS` in the workflow environment.
-2. Run `npm run export:web`; output is `apps/mobile-web/dist`.
-3. Publish that folder with `actions/upload-pages-artifact` + `actions/deploy-pages`.
-4. For a project page at `https://<user>.github.io/<repo>/`, set the static base path:
+The workflow is `.github/workflows/deploy-pages.yml`. It builds `apps/mobile-web/dist` with
+`EXPO_BASE_URL=/omni-relay`, uploads it, and deploys it with GitHub Pages.
 
-   ```json
-   {
-     "expo": {
-       "experiments": {
-         "baseUrl": "/<repo>"
-       }
-     }
-   }
-   ```
+One-time setup on GitHub:
 
-   Verify the exported asset URLs before publishing. A custom domain can avoid the subpath entirely.
+1. Add a repository secret named `EXPO_PUBLIC_ACCESS_KEYS` (Settings → Secrets and variables →
+   Actions → New repository secret). Use a comma-separated list, for example
+   `family-key-1,family-key-2`. The workflow fails instead of publishing a build without it.
+2. Open Settings → Pages → Build and deployment, and set **Source** to **GitHub Actions**.
+3. Push to `main`, or run the **Deploy web** workflow manually.
+4. Wait for the green deployment, then open `https://<user>.github.io/<repo>/`.
+
+The workflow passes the project-site base path through `EXPO_BASE_URL`; local `npm run web` remains at
+the root because `app.config.js` only adds `baseUrl` when that variable is set.
+
+### Private repositories
+
+GitHub Pages supports private repositories only on plans that include it (for example GitHub Pro,
+Team, or Enterprise). On GitHub Free, a private repository cannot publish Pages. Options:
+
+- Make this repository public. The app code and build plan are not secrets, and the access key is
+  bundled into the client anyway.
+- Upgrade the account to a plan that includes private Pages.
+- Use Cloudflare Pages (free) connected to the private GitHub repo; it supports private repositories
+  and can deploy the same `dist/` output.
+
+> Even with a private repository, the Pages site itself is public on the internet. The access-key
+> gate is client-side; anyone who has the URL can load the app shell and attempt keys.
 
 HTTPS is required for browser camera access. The Recorder is native-first; Admin and Projector only
 need WebRTC.

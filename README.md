@@ -14,6 +14,16 @@ M0 scaffold is in place: access-key gate, Expo Router role picker, Admin/Project
 
 Live progress and the exact stop point are tracked in [`PROJECT-STATUS.md`](./PROJECT-STATUS.md). The canonical architecture, milestones, protocol, and acceptance criteria live in [`ClearRelay-Build-Plan.md`](./ClearRelay-Build-Plan.md). Read sections 1–5, 11, and 21 before changing architecture. Distribution and APK notes are in [`docs/deployment.md`](./docs/deployment.md).
 
+## Web app
+
+The GitHub Pages target is **https://naveenmorla1901.github.io/omni-relay/** once the deploy workflow has run. One-time setup:
+
+1. Add the repository secret `EXPO_PUBLIC_ACCESS_KEYS` (comma-separated keys).
+2. Open **Settings → Pages** and set **Source** to **GitHub Actions**.
+3. Run the **Deploy web** workflow or push to `main`.
+
+GitHub Pages on a private repository requires a paid plan. On Free, make the repo public or use Cloudflare Pages; see [`docs/deployment.md`](./docs/deployment.md). A Pages site is publicly reachable even when the repo is private.
+
 ## Requirements
 
 - Node.js `22.13+` (`.nvmrc` pins 22.13.0; Expo 58 requires it)
@@ -33,7 +43,7 @@ npm run export:web
 EXPO_PUBLIC_ACCESS_KEYS="key-one,key-two" npm run export:web
 ```
 
-The development fallback is `clearrelay-demo`. This is a local front-door, not authentication — the key is embedded in the bundle and can be extracted. See `docs/deployment.md` for the limitation and the pairing-PIN follow-up.
+The development fallback is `clearrelay-demo`; production builds without the variable fail closed. This is a local front-door, not authentication — the key is embedded in the bundle and can be extracted. See `docs/deployment.md` for the limitation and the pairing-PIN follow-up.
 
 ## Commands
 
