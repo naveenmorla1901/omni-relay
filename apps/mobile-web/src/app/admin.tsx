@@ -19,6 +19,7 @@ import { VideoView } from '@/components/video-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { usePairing } from '@/hooks/use-pairing';
 import { useTheme } from '@/hooks/use-theme';
+import { enhanceCapture } from '@/lib/cv';
 import { useSessionStore } from '@/store/session';
 
 type SendMode = 'image' | 'code';
@@ -40,26 +41,14 @@ export default function AdminScreen() {
 }
 
 function captureFromVideo(video: HTMLVideoElement): CapturedFrame | null {
-  if (!video.videoWidth || !video.videoHeight) return null;
-  const canvas = document.createElement('canvas');
-  canvas.width = video.videoWidth;
-  canvas.height = video.videoHeight;
-  const ctx = canvas.getContext('2d');
-  if (!ctx) return null;
-  if ('filter' in ctx) {
-    (ctx as CanvasRenderingContext2D & { filter: string }).filter =
-      'contrast(1.3) brightness(1.05) saturate(0.75)';
-  }
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  if ('filter' in ctx) {
-    (ctx as CanvasRenderingContext2D & { filter: string }).filter = 'none';
-  }
+  const dataUrl = enhanceCapture(video);
+  if (!dataUrl) return null;
   return {
     id: String(Date.now()),
     ts: Date.now(),
-    dataUrl: canvas.toDataURL('image/webp', 0.95),
-    width: canvas.width,
-    height: canvas.height,
+    dataUrl,
+    width: video.videoWidth,
+    height: video.videoHeight,
   };
 }
 
@@ -73,9 +62,11 @@ function AdminWorkspace() {
   const [language, setLanguage] = useState('');
   const [gallery, setGallery] = useState<CapturedFrame[]>([]);
   const [activeCapture, setActiveCapture] = useState<CapturedFrame | null>(null);
+  const [sendStatus, setSendStatus] = useState<string | null>(null);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const wide = width >= 1000;
   const recorderLive = pairing.phase === 'connected';
+  const projectorReady = pairing.projectorJoined;
 
   const captureStill = useCallback(() => {
     const video = videoElementRef.current;
@@ -85,7 +76,16 @@ function AdminWorkspace() {
     setGallery((prev) => [frame, ...prev].slice(0, 20));
     setActiveCapture(frame);
     setSendMode('image');
+    setSendStatus(null);
   }, []);
+
+  const handleSendToProjector = useCallback(() => {
+    if (sendMode === 'image' && activeCapture) {
+      pairing.pushImage(activeCapture.dataUrl);
+      setSendStatus('Sent!');
+      setTimeout(() => setSendStatus(null), 2500);
+    }
+  }, [sendMode, activeCapture, pairing]);
 
   return (
     <ThemedView style={styles.root}>
@@ -288,7 +288,9 @@ function AdminWorkspace() {
             <View style={[styles.pane, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
               <View style={styles.paneHeader}>
                 <ThemedText type="smallBold">Send to Projector</ThemedText>
-                <ThemedText type="code" themeColor="textSecondary">LINK B · M4</ThemedText>
+                <ThemedText type="code" themeColor={projectorReady ? 'text' : 'textSecondary'}>
+                  {projectorReady ? 'LINK B · READY' : 'LINK B · WAITING'}
+                </ThemedText>
               </View>
 
               <View style={styles.tabs}>
@@ -364,13 +366,24 @@ function AdminWorkspace() {
 
               <Pressable
                 accessibilityRole="button"
-                disabled
-                style={[styles.sendBtn, { backgroundColor: theme.accent, opacity: 0.4 }]}>
-                <ThemedText type="smallBold" style={{ color: theme.accentText }}>Send to Projector</ThemedText>
+                disabled={!projectorReady || !(sendMode === 'image' && activeCapture)}
+                onPress={handleSendToProjector}
+                style={({ pressed }) => [
+                  styles.sendBtn,
+                  {
+                    backgroundColor: theme.accent,
+                    opacity: (!projectorReady || !(sendMode === 'image' && activeCapture)) ? 0.4 : pressed ? 0.8 : 1,
+                  },
+                ]}>
+                <ThemedText type="smallBold" style={{ color: theme.accentText }}>
+                  {sendStatus ?? 'Send to Projector'}
+                </ThemedText>
               </Pressable>
-              <ThemedText type="small" themeColor="textSecondary">
-                Image chunking and Projector render arrive in M4.
-              </ThemedText>
+              {!projectorReady && (
+                <ThemedText type="small" themeColor="textSecondary">
+                  Projector must connect to this session first.
+                </ThemedText>
+              )}
             </View>
           </View>
 

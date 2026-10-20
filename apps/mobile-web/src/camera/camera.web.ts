@@ -74,6 +74,9 @@ class WebCameraSource implements ICameraSource {
     for (const constraints of attempts) {
       try {
         this.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: constraints });
+        // Tell the WebRTC encoder to prioritise detail/sharpness over motion smoothness.
+        const vt = this.stream.getVideoTracks()[0];
+        if (vt && 'contentHint' in vt) (vt as MediaStreamTrack & { contentHint: string }).contentHint = 'detail';
         return;
       } catch (err) {
         lastError = err;

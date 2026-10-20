@@ -41,6 +41,9 @@ export type UsePairingResult = {
   error: string | null;
   busy: boolean;
 
+  /** Display: last image pushed from Admin. `data` is raw base64 (no data-URL prefix). */
+  receivedImage: { data: string; mime: string } | null;
+
   /** Admin: create a room and get a shareable code. */
   createRoom(): Promise<void>;
 
@@ -49,6 +52,9 @@ export type UsePairingResult = {
 
   /** Recorder: attach local camera track to the WebRTC connection. */
   attachVideoTrack(track: MediaStreamTrack): void;
+
+  /** Admin: push a data-URL image to the connected Projector via the WS relay. */
+  pushImage(dataUrl: string): void;
 
   /** Close everything and return to idle. */
   reset(): void;
@@ -65,6 +71,7 @@ export function usePairing(role: PairingRole): UsePairingResult {
   const [projectorJoined, setProjectorJoined] = useState(false);
   const [peerRole, setPeerRole] = useState<Role | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [receivedImage, setReceivedImage] = useState<{ data: string; mime: string } | null>(null);
 
   const signalRef = useRef<SignalClient | null>(null);
   const connectionRef = useRef<IConnection | null>(null);
@@ -88,6 +95,7 @@ export function usePairing(role: PairingRole): UsePairingResult {
     setProjectorJoined(false);
     setPeerRole(null);
     setError(null);
+    setReceivedImage(null);
   }, [disposeAll]);
 
   useEffect(() => disposeAll, [disposeAll]);
@@ -286,6 +294,10 @@ export function usePairing(role: PairingRole): UsePairingResult {
         }
       }
 
+      else if (msg.t === 'push') {
+        setReceivedImage({ data: msg.data, mime: msg.mime });
+      }
+
       else if (msg.t === 'error') {
         setPhase('failed');
         setError(msg.msg);
@@ -299,6 +311,17 @@ export function usePairing(role: PairingRole): UsePairingResult {
       }
     });
   }, [disposeAll, openConnection, phase, role]);
+
+  // ── Admin: push image to Projector via WS relay ───────────────────────────
+
+  const pushImage = useCallback((dataUrl: string) => {
+    const signal = signalRef.current;
+    if (!signal) return;
+    const commaIdx = dataUrl.indexOf(',');
+    const mime = commaIdx > 0 ? dataUrl.slice(5, commaIdx).replace(';base64', '') : 'image/jpeg';
+    const data = commaIdx > 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
+    signal.pushToDisplay(data, mime);
+  }, []);
 
   // ── Recorder: attach camera track ─────────────────────────────────────────
 
@@ -318,9 +341,11 @@ export function usePairing(role: PairingRole): UsePairingResult {
     peerRole,
     error,
     busy: phase === 'creating' || phase === 'joining' || phase === 'exchanging' || phase === 'connecting',
+    receivedImage,
     createRoom,
     joinRoom,
     attachVideoTrack,
+    pushImage,
     reset,
   };
 }

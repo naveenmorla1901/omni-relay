@@ -2,7 +2,7 @@
 
 ClearRelay is a greenfield Expo + WebRTC app. `ClearRelay-Build-Plan.md` is the canonical spec: read §1–5, §11, and §21 before architectural work. Build in M0→M9 order (§15) and keep each milestone demoable.
 
-**Current state:** M1–M3 web + M8 signaling are done. All three roles connect via 6-char room codes through a Railway WebSocket relay (`wss://omni-relay-production-d45c.up.railway.app`). Admin shows live feed from Recorder and captures full-resolution stills in an in-memory gallery. Native `IConnection`/`ICameraSource` are implemented via `react-native-webrtc`. Android APK CI workflow is ready (push a `v*` tag to build). iOS personal use via PWA (GitHub Pages → Safari → Add to Home Screen). M4 (Admin→Projector Link B) is next.
+**Current state:** M1–M4 web + M8 signaling are done. All three roles connect via 6-char room codes through a Railway WebSocket relay (`wss://omni-relay-production-d45c.up.railway.app`). Admin shows live feed from Recorder, captures enhanced stills (unsharp mask + auto-levels), and can push them to Projector full-screen via the WS relay. Projector displays the last pushed image. CV pipeline lives in `src/lib/cv.ts`. Native `IConnection`/`ICameraSource` are implemented via `react-native-webrtc`. Android APK CI workflow is ready (push a `v*` tag to build). iOS personal use via PWA (GitHub Pages → Safari → Add to Home Screen). M5 (OpenCV.js quad detection + perspective warp) is next.
 
 **Progress tracking:** `PROJECT-STATUS.md` is the live checklist and stop point. At the end of every working session, update its checkboxes, current stop point, next action, and session log. Do not let it drift from the code.
 

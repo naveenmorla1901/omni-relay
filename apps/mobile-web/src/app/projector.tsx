@@ -2,6 +2,7 @@ import { Link } from 'expo-router';
 import { useState } from 'react';
 import {
   ActivityIndicator,
+  Image,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -32,6 +33,8 @@ function ProjectorWorkspace() {
   const pairing = usePairing('display');
   const [codeInput, setCodeInput] = useState('');
   const connected = pairing.phase === 'connected';
+  const received = pairing.receivedImage;
+  const imageSrc = received ? `data:${received.mime};base64,${received.data}` : null;
 
   const handleJoin = () => {
     const trimmed = codeInput.trim().toUpperCase();
@@ -127,12 +130,22 @@ function ProjectorWorkspace() {
                 </View>
 
                 <View style={[styles.display, { backgroundColor: '#05070A', borderColor: theme.border }]}>
-                  <ThemedText style={styles.displayPlaceholder} themeColor="textSecondary">
-                    Waiting for content from Admin…
-                  </ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
-                    Full-screen image and code rendering arrive in M4.
-                  </ThemedText>
+                  {imageSrc ? (
+                    <Image
+                      source={{ uri: imageSrc }}
+                      style={styles.displayImage}
+                      resizeMode="contain"
+                    />
+                  ) : (
+                    <>
+                      <ThemedText style={styles.displayPlaceholder} themeColor="textSecondary">
+                        Waiting for content from Admin…
+                      </ThemedText>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        Admin will push an image once Recorder is live.
+                      </ThemedText>
+                    </>
+                  )}
                 </View>
 
                 <Pressable
@@ -200,4 +213,5 @@ const styles = StyleSheet.create({
     padding: Spacing.four,
   },
   displayPlaceholder: { fontSize: 18, textAlign: 'center' },
+  displayImage: { width: '100%', height: '100%', borderRadius: 14 },
 });

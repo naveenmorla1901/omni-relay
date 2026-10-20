@@ -11,6 +11,7 @@ export type SignalMsg =
   | { t: 'joined'; role: WsRole }
   | { t: 'left'; role: WsRole }
   | { t: 'sdp'; from: WsRole; sdp: string; kind: 'offer' | 'answer' }
+  | { t: 'push'; data: string; mime: string }
   | { t: 'error'; msg: string };
 
 export class SignalClient {
@@ -69,6 +70,10 @@ export class SignalClient {
 
   relaySdp(to: WsRole, sdp: string, kind: 'offer' | 'answer'): void {
     this.send({ t: 'sdp', to, sdp, kind });
+  }
+
+  pushToDisplay(data: string, mime: string): void {
+    this.send({ t: 'push', data, mime });
   }
 
   /** Subscribe to incoming messages. Returns an unsubscribe function. */

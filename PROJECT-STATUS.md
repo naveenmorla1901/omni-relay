@@ -6,9 +6,9 @@
 > unless a decision is recorded below.
 
 **Last updated:** 2026-10-19
-**Current milestone:** M1–M3 web complete + M8 signaling server live. Room-code pairing works across all three roles over the Railway WebSocket relay. Admin captures full-resolution stills with a gallery. Native `IConnection`/`ICameraSource` implemented via react-native-webrtc. Android APK CI workflow ready (tag to build). iOS is PWA via GitHub Pages.
-**Current stop point:** All three roles connect via 6-char room codes. Admin shows live feed from Recorder and can take screenshots at intrinsic resolution with contrast/brightness enhancement stored in an in-memory gallery. Projector connects and waits (Link B content push is M4). Native Android files are wired but no APK tag has been pushed yet. Signaling server is live at `wss://omni-relay-production-d45c.up.railway.app` on Railway (root dir `services/signaling`, `node server.js`, PORT=8081).
-**Next action:** M4 — Admin → Projector data channel: push captured images/code from Admin to Projector full-screen.
+**Current milestone:** M1–M4 web complete + M8 signaling server live. All three roles connect via 6-char room codes. Admin pushes enhanced captures to Projector full-screen via WS relay. CV enhancement pipeline (unsharp mask + auto-levels) applied on every capture.
+**Current stop point:** Admin can push JPEG captures to the Projector full-screen via the existing WS relay connection. CV pipeline: contrast boost → unsharp mask (amount 1.8) → percentile auto-levels → JPEG 97%. Camera `contentHint='detail'` set on web to bias WebRTC encoder toward sharpness. M5 (OpenCV.js quad detection + perspective warp) is next.
+**Next action:** M5 — quad/document detection on video frames (OpenCV.js worker), perspective warp, and CLAHE.
 
 ## How to update this file
 
@@ -73,18 +73,20 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 
 ### M4 — Admin → Projector (Link B)
 
-- [ ] Second WebRTC session; data channel only
-- [ ] Image begin/chunk/end protocol with 16 KB chunks
-- [ ] Backpressure via `bufferedAmountLowThreshold`
-- [ ] Projector reassembly and full-screen image render
-- [ ] Projector keeps the last item until the next push
-- [ ] Admin sends from gallery or code tab to Projector
+- [~] Second WebRTC session — deferred; using WS relay for push (simpler, already connected)
+- [~] Image chunking — deferred; single WS message works for JPEG ≤1 MB
+- [x] Projector reassembly and full-screen image render
+- [x] Projector keeps the last item until the next push
+- [x] Admin sends from gallery (image tab) to Projector — "Send to Projector" button live
+- [ ] Code push (M7 — needs OCR/render pipeline first)
 
 ### M5 — CV enhancement pipeline
 
+- [x] Unsharp mask (amount 1.8) + percentile auto-levels in `src/lib/cv.ts`
+- [x] `contentHint='detail'` on web video track for WebRTC encoder quality
 - [ ] Quad detection on web (OpenCV.js worker)
 - [ ] Quad detection on native (frame processor)
-- [ ] Perspective warp + CLAHE + unsharp mask
+- [ ] Perspective warp + CLAHE
 - [ ] EMA smoothing, movement threshold, re-detect
 - [ ] Raw-frame fallback when no quad is found
 
@@ -185,3 +187,4 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **2026-10-19** — Built-in access key, Pages live, M0 UI shell deployed.
 - **2026-10-19** — M1/M2 web: browser `IConnection`, ICE, SDP compression, `ICameraSource`, QR/copy-paste pairing, live Recorder→Admin feed. 14 unit tests. E2E verified.
 - **2026-10-19** — M3 + M8 + native + Android CI: room-code pairing via WebSocket relay (`signal-ws.ts` + `server.js`), Admin screenshot gallery at intrinsic resolution, camera improvements (fallback chain, rear-camera default, flip, re-lock, settings display), encoder params fix, `IConnection`/`ICameraSource` native implementations (`react-native-webrtc`), Android APK GitHub Actions workflow, Download APK button on home screen. Signaling server deployed to Railway (`wss://omni-relay-production-d45c.up.railway.app`). All three roles connecting end-to-end. CLAUDE.md added.
+- **2026-10-19** — M4 + CV pipeline: "Send to Projector" button live — Admin pushes JPEG captures to Projector via WS relay; Projector renders full-screen. CV enhancement: contrast boost → unsharp mask (amount 1.8) → percentile auto-levels → JPEG 97%. `contentHint='detail'` on camera track for sharper WebRTC encoding. Server.js `push` relay case added.

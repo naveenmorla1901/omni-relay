@@ -83,6 +83,15 @@ wss.on('connection', (ws) => {
         push(target.ws, { t: 'sdp', from: peer.role, sdp: msg.sdp, kind: msg.kind });
         break;
       }
+      case 'push': {
+        if (peer.role !== 'admin') { push(ws, { t: 'error', msg: 'Only admin can push content.' }); return; }
+        const room = peer.roomCode ? rooms.get(peer.roomCode) : null;
+        if (!room) { push(ws, { t: 'error', msg: 'Not in a room.' }); return; }
+        const display = room.peers.get('display');
+        if (!display) { push(ws, { t: 'error', msg: 'Projector is not connected.' }); return; }
+        push(display.ws, { t: 'push', data: msg.data, mime: msg.mime ?? 'image/jpeg' });
+        break;
+      }
     }
   });
 
