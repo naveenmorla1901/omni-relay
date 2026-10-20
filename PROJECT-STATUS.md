@@ -5,10 +5,10 @@
 > this file disagree on progress, this file wins; when they disagree on architecture, the plan wins
 > unless a decision is recorded below.
 
-**Last updated:** 2026-10-19
-**Current milestone:** M1–M4 web complete + M8 signaling server live. All three roles connect via 6-char room codes. Admin pushes enhanced captures to Projector full-screen via WS relay. CV enhancement pipeline (unsharp mask + auto-levels) applied on every capture.
-**Current stop point:** Admin can push JPEG captures to the Projector full-screen via the existing WS relay connection. CV pipeline: contrast boost → unsharp mask (amount 1.8) → percentile auto-levels → JPEG 97%. Camera `contentHint='detail'` set on web to bias WebRTC encoder toward sharpness. M5 (OpenCV.js quad detection + perspective warp) is next.
-**Next action:** M5 — quad/document detection on video frames (OpenCV.js worker), perspective warp, and CLAHE.
+**Last updated:** 2026-10-20
+**Current milestone:** M1–M4 complete (web + Android APK). M5 CV pipeline partially done (unsharp mask + auto-levels). Android APK v0.1.4 runs on device — Recorder shows live camera preview, Admin captures + rotates + zooms + pushes to Projector.
+**Current stop point:** Three-device session works end-to-end on real hardware (Admin browser + Recorder APK + Projector browser). APK launches directly to access key screen, camera preview shows on phone, Admin shows live feed, captures enhanced images, can rotate/zoom them, and pushes to Projector full-screen. OpenCV.js quad detection + perspective warp (M5 remainder) is next.
+**Next action:** M5 — OpenCV.js web worker for document/screen quad detection and perspective warp on captured frames.
 
 ## How to update this file
 
@@ -34,7 +34,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] ESLint, Vitest, typecheck, static web export
 - [x] Web export verified (all routes render statically)
 - [x] App identity: `com.clearrelay.app`, scheme `clearrelay`
-- [~] Native prebuild — Android permissions + react-native-webrtc wired; prebuild not run in CI yet (APK tag not pushed)
+- [x] Native prebuild — Android permissions + react-native-webrtc wired; APK built via CI (`v*` tag)
 - [ ] Native prebuild + dev-client build on iOS (requires macOS or EAS)
 - [x] Styling decision: Tamagui/NativeWind deferred; plain StyleSheet is in use
 
@@ -44,8 +44,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] `IConnection` native implementation (`react-native-webrtc`) — `connection.ts`
 - [x] Non-trickle ICE gathering with timeout
 - [x] SDP gzip + base64 compression (`fflate`, `CR1.` prefix)
-- [ ] Chunked/animated QR fallback — not needed; room-code path supersedes QR for remote pairing
-- [x] Room-code pairing (6-char codes via WebSocket signaling relay) — replaces QR as primary pairing method
+- [x] Room-code pairing (6-char codes via WebSocket signaling relay) — primary pairing method
 - [x] Two-browser-tab data-channel echo test (E2E verified: offer/answer, hello message, live video)
 - [x] Unit tests for SDP compression (14 total passing)
 
@@ -53,46 +52,53 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 
 - [x] Web camera source (`getUserMedia`) behind `ICameraSource`
 - [x] Native camera source (`react-native-webrtc` mediaDevices) — `camera.ts`
-- [x] 3-attempt getUserMedia fallback chain with HD min-floor constraints
+- [x] 3-attempt getUserMedia fallback chain; 4K ideal → HD min-floor → bare fallback
 - [x] Rear camera default (`facingMode: environment`)
 - [x] `flipCamera()`, `getActualSettings()`, `lockExposureFocusWhiteBalance()`
-- [x] Remote video track render in Admin
+- [x] Remote video track render in Admin (web `<video>` element via `onVideoElement` prop)
+- [x] Native local camera preview via `RTCView` in `video-view.tsx`
 - [x] Encoder params re-applied at WebRTC connected state (`maintain-resolution`, low FPS, high bitrate)
+- [x] `contentHint='detail'` on web video track for sharper WebRTC encoding
 - [x] Camera settings display (resolution × fps · facingMode) in Recorder UI
 - [x] Recorder shows connection status chip and camera controls (Re-lock, Flip, Stop/Start)
 - [ ] Battery guard: pause camera/encoder when app backgrounds
 
 ### M3 — Admin capture + gallery
 
-- [x] Capture at intrinsic video resolution (`video.videoWidth × video.videoHeight`)
-- [x] CSS filter on canvas (`contrast(1.3) brightness(1.05) saturate(0.75)`) for text clarity
-- [x] In-memory gallery with thumbnails and full preview pane
-- [x] `VideoView` exposes `onVideoElement` so Admin can draw to canvas from the live `<video>` element
-- [ ] Crop / rotate / enhance controls
-- [x] Two-pane Admin layout: live feed left, send-to-Projector right
+- [x] Capture at intrinsic video resolution (up to 4K if camera supports it)
+- [x] CV pipeline on capture: contrast boost → unsharp mask (1.8) → percentile auto-levels → JPEG 97%
+- [x] In-memory gallery (max 20) with thumbnail strip
+- [x] `VideoView` exposes `onVideoElement` so Admin can draw to canvas from live `<video>` element
+- [x] Large captured image preview in left pane with dimensions + timestamp
+- [x] Rotate CCW / CW buttons (90° canvas rotation, updates gallery)
+- [x] Zoom button opens image full-screen in Modal overlay (tap to dismiss)
+- [x] Admin layout: left pane (flex:2) live feed + gallery + capture preview; right pane (flex:1) send controls
 
 ### M4 — Admin → Projector (Link B)
 
-- [~] Second WebRTC session — deferred; using WS relay for push (simpler, already connected)
-- [~] Image chunking — deferred; single WS message works for JPEG ≤1 MB
-- [x] Projector reassembly and full-screen image render
-- [x] Projector keeps the last item until the next push
-- [x] Admin sends from gallery (image tab) to Projector — "Send to Projector" button live
+- [~] Second WebRTC session — deferred; using existing WS relay for push (already connected, sufficient for JPEG < 1 MB)
+- [x] Image push via WS relay (`push` message type in server.js + signal-ws.ts)
+- [x] Projector reassembles data-URL and renders image full-screen
+- [x] Projector keeps last image until next push
+- [x] "Send to Projector" button — explicit user action, not auto-triggered on capture
+- [x] Right pane shows LINK B · READY / WAITING status
 - [ ] Code push (M7 — needs OCR/render pipeline first)
+- [ ] WebRTC data channel + chunking for large images (if WS relay becomes a bottleneck)
 
 ### M5 — CV enhancement pipeline
 
-- [x] Unsharp mask (amount 1.8) + percentile auto-levels in `src/lib/cv.ts`
-- [x] `contentHint='detail'` on web video track for WebRTC encoder quality
-- [ ] Quad detection on web (OpenCV.js worker)
-- [ ] Quad detection on native (frame processor)
-- [ ] Perspective warp + CLAHE
-- [ ] EMA smoothing, movement threshold, re-detect
-- [ ] Raw-frame fallback when no quad is found
+- [x] `src/lib/cv.ts` — unsharp mask (amount 1.8) + percentile auto-levels (0.5% clip) + JPEG 97%
+- [x] `rotateImage()` — canvas-based 90/180/270/-90° JPEG rotation
+- [x] `contentHint='detail'` on camera track
+- [ ] Quad/document edge detection (OpenCV.js web worker)
+- [ ] Perspective warp to rectangle
+- [ ] CLAHE adaptive contrast
+- [ ] EMA quad smoothing, movement threshold, re-detect
+- [ ] Raw-frame fallback when no quad found
 
 ### M6 — Camera lock + clarity tuning
 
-- [~] Exposure/focus/white-balance lock after convergence (web best-effort via `applyConstraints`; native same)
+- [~] Exposure/focus/white-balance lock — web best-effort via `applyConstraints`; best-effort on native
 - [ ] Torch control and glare warning
 - [ ] Quality presets (Clarity / Balanced)
 - [ ] Anti-moiré and codec tests
@@ -109,11 +115,12 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 
 - [x] `services/signaling/server.js` WebSocket room server (plain JS, no build step)
 - [x] 6-char room codes (confusable chars excluded); rooms expire after 30 min
+- [x] `push` relay: forwards image data from admin to display peer
 - [x] Deployed to Railway: `wss://omni-relay-production-d45c.up.railway.app` (root dir `services/signaling`, PORT=8081)
-- [x] `SignalClient` browser class (`signal-ws.ts`) with 10 s connect timeout
+- [x] `SignalClient` — `pushToDisplay()` method, `push` message type
 - [x] URL baked into `config/index.ts` default; overridable via `EXPO_PUBLIC_SIGNALING_URL`
 - [ ] Dockerfile / self-host notes
-- [ ] Optional TURN for hard NAT
+- [ ] Optional TURN for hard NAT (needed when both peers on different carrier NAT)
 
 ### M9 — Resilience, polish, packaging
 
@@ -121,9 +128,9 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [ ] Status UI and session PIN
 - [ ] Full responsive Admin polish
 - [x] Web deploy workflow (GitHub Pages, auto on push to main)
-- [x] GitHub Actions Android APK workflow (`build-android.yml`, triggers on `v*` tags)
-- [ ] Push `v0.1.0` tag to produce first APK in GitHub Releases
-- [ ] Install and smoke-test the APK on a physical Android device
+- [x] GitHub Actions Android APK workflow (`build-android.yml` — `assembleRelease` + debug keystore, triggers on `v*` tag or manual)
+- [x] APK v0.1.4 published to GitHub Releases — runs on physical Android device
+- [~] Smoke-test on physical Android device — app launches, camera shows, video transmits to Admin
 - [ ] iOS build (PWA via Pages is the personal-use path; EAS for wider distribution)
 - [ ] Final device matrix and release checklist
 
@@ -139,14 +146,17 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 
 ## Admin / Projector UX
 
-- [x] Admin: left live-feed pane + right send-to-Projector pane
+- [x] Admin: left pane (flex:2) live feed + gallery + captured image preview
+- [x] Admin: right pane (flex:1) explicit send-to-Projector controls
 - [x] Admin: session panel with room code display and per-device status chips
-- [x] Admin: screenshot gallery with thumbnail strip and preview
-- [x] Admin: Image / Code tabs in send pane (Code tab is draft UI; send action is M4)
-- [x] Projector: 6-char code entry → "Connected to Admin" badge → content placeholder
+- [x] Admin: gallery thumbnail strip (horizontal scroll, max 20 captures)
+- [x] Admin: large captured image preview with rotate CCW/CW + zoom buttons
+- [x] Admin: Image / Code tabs in send pane; send is explicit user action
+- [x] Admin: LINK B READY/WAITING status in right pane header
+- [x] Projector: 6-char code entry → "Connected to Admin" badge → full-screen image render
 - [x] Recorder: code entry → camera auto-starts on connect → Re-lock / Flip / Stop controls
-- [ ] Projector full-screen image render (M4)
-- [ ] Mobile Admin layout verification on physical device
+- [x] Recorder (native): local camera preview via RTCView
+- [ ] Mobile Admin layout verification on physical device (tablet/large phone)
 
 ## Distribution
 
@@ -155,29 +165,34 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] GitHub Pages deploy workflow — live at `https://naveenmorla1901.github.io/omni-relay/`
 - [x] `.npmrc` with fetch-retry hardening for CI
 - [x] iOS personal use: add GitHub Pages URL to Safari home screen as PWA
-- [x] Android APK CI workflow ready (`build-android.yml` — `assembleDebug`, triggers on `v*` tag or manual)
-- [x] Download APK button on home screen links to `github.com/naveenmorla1901/omni-relay/releases/latest`
-- [ ] Push `v0.1.0` tag → first APK in GitHub Releases
-- [ ] Android keystore + signed release APK (future)
+- [x] Android APK CI: `assembleRelease` + debug-keystore signing; triggers on `v*` tag
+- [x] APK v0.1.4 live at `github.com/naveenmorla1901/omni-relay/releases/latest`
+- [x] Download APK button on home screen links to latest release
+- [ ] Android keystore + signed release APK (for Play Store / wider distribution)
 
 ## Decisions
 
-- **Serverless definition:** no cloud backend, media server, or database. Static GitHub Pages for web UI; signaling relay for room codes only; media stays P2P.
-- **Pairing:** room codes via WebSocket signaling relay (M8 pulled forward). QR/copy-paste path still works but is no longer the primary UI.
-- **Signaling server:** plain JS (`server.js`) on Railway, root dir `services/signaling`, `node server.js`, PORT=8081. URL baked into `config/index.ts` default.
+- **Serverless:** no cloud backend, media server, or database. Static GitHub Pages for web; signaling relay for room codes + image push only; media stays P2P.
+- **Pairing:** room codes via WebSocket signaling relay. QR/copy-paste path removed from primary UI.
+- **Signaling server:** plain JS (`server.js`) on Railway, root dir `services/signaling`, `node server.js`, PORT=8081.
+- **Image push (M4):** via existing WS relay connection (`push` message type), not a second WebRTC session. Single message, no chunking — sufficient for JPEG ≤ 1 MB.
 - **Projector naming:** UI uses **Projector**; wire role stays `display`.
 - **Access key:** client-side gate only; `ACCESS_KEY` in `config/index.ts`; not a security boundary.
 - **GitHub Pages base path:** `EXPO_BASE_URL=/omni-relay` injected by deploy workflow.
-- **Android APK:** `assembleDebug` (no keystore needed); publish to GitHub Releases via `v*` tag.
+- **Android APK:** `assembleRelease` signed with the pre-installed debug keystore (appended to generated `build.gradle` in CI). No separate keystore secret needed for sideloading. `assembleDebug` was abandoned — debug builds load JS from Metro server and hang on real devices.
+- **expo-dev-client removed:** caused the APK to show a "connect to dev server" launcher instead of the app. Not needed for a standalone build.
+- **Unused native packages removed:** `react-native-worklets` (Vision Camera JSI module), `@expo/ui`, `expo-glass-effect`, `expo-image`, `expo-symbols`, `expo-device`, `expo-font`, `expo-web-browser` — all caused potential startup crashes or APK bloat. None were imported in source.
 - **iOS personal use:** PWA via GitHub Pages (Safari → Add to Home Screen). No Apple Developer account needed.
-- **Native WebRTC:** `react-native-webrtc` for both `IConnection` and `ICameraSource`. Do NOT add it to `expo.plugins` in `app.json` — it has no config plugin and crashes the web export.
-- **Camera capture quality:** intrinsic resolution (`video.videoWidth × video.videoHeight`) + canvas CSS filter (`contrast(1.3) brightness(1.05) saturate(0.75)`).
+- **Native WebRTC:** `react-native-webrtc` for both `IConnection` and `ICameraSource`. Do NOT add it to `expo.plugins` in `app.json` — it has no config plugin and crashes `expo export`.
+- **Camera resolution:** first `getUserMedia` attempt asks for 4K (3840×2160) with 1280×720 floor; falls back gracefully. `contentHint='detail'` set on track.
+- **CV pipeline:** `src/lib/cv.ts` — contrast boost (CSS filter) → unsharp mask (amount 1.8) → percentile auto-levels (0.5% tail clip) → JPEG 97%.
+- **Image rotation:** canvas-based, applied in-place — updates `activeCapture.dataUrl` and mirrors into gallery array.
 
 ## Open questions / decisions needed
 
-- [ ] Push `v0.1.0` tag when ready to produce the first Android APK.
-- [ ] Confirm end-to-end three-device session on real hardware (Admin laptop + Recorder phone + Projector screen).
-- [ ] M4 Link B design: direct WebRTC session between Admin and Projector, or relay through signaling server?
+- [ ] TURN server needed for cross-carrier NAT (Recorder on mobile data + Admin on WiFi may fail ICE).
+- [ ] M5 OpenCV.js: load as a web worker to avoid blocking the main thread (~8 MB WASM).
+- [ ] Confirm end-to-end on real hardware across different networks.
 - [ ] Decide whether pairing PIN/session secret is needed for real access control.
 
 ## Session log
@@ -186,5 +201,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **2026-10-19** — Git init, push to GitHub, Pages deploy workflow, dynamic `EXPO_BASE_URL`, public repo, Pages enabled.
 - **2026-10-19** — Built-in access key, Pages live, M0 UI shell deployed.
 - **2026-10-19** — M1/M2 web: browser `IConnection`, ICE, SDP compression, `ICameraSource`, QR/copy-paste pairing, live Recorder→Admin feed. 14 unit tests. E2E verified.
-- **2026-10-19** — M3 + M8 + native + Android CI: room-code pairing via WebSocket relay (`signal-ws.ts` + `server.js`), Admin screenshot gallery at intrinsic resolution, camera improvements (fallback chain, rear-camera default, flip, re-lock, settings display), encoder params fix, `IConnection`/`ICameraSource` native implementations (`react-native-webrtc`), Android APK GitHub Actions workflow, Download APK button on home screen. Signaling server deployed to Railway (`wss://omni-relay-production-d45c.up.railway.app`). All three roles connecting end-to-end. CLAUDE.md added.
-- **2026-10-19** — M4 + CV pipeline: "Send to Projector" button live — Admin pushes JPEG captures to Projector via WS relay; Projector renders full-screen. CV enhancement: contrast boost → unsharp mask (amount 1.8) → percentile auto-levels → JPEG 97%. `contentHint='detail'` on camera track for sharper WebRTC encoding. Server.js `push` relay case added.
+- **2026-10-19** — M3 + M8 + native + Android CI: room-code pairing, Admin screenshot gallery, camera improvements, encoder params, native `IConnection`/`ICameraSource`, Android APK CI workflow. Signaling server on Railway. All three roles end-to-end.
+- **2026-10-19** — M4 + CV pipeline: Send to Projector live via WS relay push. CV: unsharp mask + auto-levels. `contentHint='detail'` on camera.
+- **2026-10-20** — Android APK fixes: CI permissions (`contents: write`), `setup-java@v5`, removed `expo-dev-client` (dev launcher), removed unused native packages (`react-native-worklets` etc. causing silent startup crash), switched `assembleDebug` → `assembleRelease` + debug-keystore signing (debug builds don't embed JS bundle). APK v0.1.4 runs on device.
+- **2026-10-20** — Native camera preview, admin redesign: `video-view.tsx` now renders `RTCView` for local stream on Android. Admin left pane wider (flex:2), capture stays in left pane (not auto-sent to right), rotate CCW/CW buttons, zoom modal. Camera tries 4K first. `rotateImage()` added to cv.ts.
