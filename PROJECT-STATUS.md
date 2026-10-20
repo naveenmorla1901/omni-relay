@@ -6,9 +6,9 @@
 > unless a decision is recorded below.
 
 **Last updated:** 2026-10-19
-**Current milestone:** M1 web half and M2 web half are implemented and E2E-verified: Recorder camera → Admin live video over WebRTC, paired by QR or copy/paste code. Native `IConnection`/`ICameraSource` are still stubs. M3 (Admin capture + gallery) is next.
-**Current stop point:** The web Recorder creates an invite, Admin scans/pastes it and returns an answer, the Recorder scans/pastes the answer, the camera starts, and Admin renders the live remote track. Verified with a two-context headless E2E run (pairing, data-channel hello, and video on both sides). The `9fdf904` deploy is green and the live bundle contains the pairing code (`CR1.` / `clearrelay-control`). No native camera/WebRTC, no QR chunk fallback, no APK.
-**Next action:** Implement M3: freeze a full-intrinsic-resolution still in Admin and add the in-memory gallery/thumbnails.
+**Current milestone:** M1–M3 web complete + M8 signaling server live. Room-code pairing works across all three roles over the Railway WebSocket relay. Admin captures full-resolution stills with a gallery. Native `IConnection`/`ICameraSource` implemented via react-native-webrtc. Android APK CI workflow ready (tag to build). iOS is PWA via GitHub Pages.
+**Current stop point:** All three roles connect via 6-char room codes. Admin shows live feed from Recorder and can take screenshots at intrinsic resolution with contrast/brightness enhancement stored in an in-memory gallery. Projector connects and waits (Link B content push is M4). Native Android files are wired but no APK tag has been pushed yet. Signaling server is live at `wss://omni-relay-production-d45c.up.railway.app` on Railway (root dir `services/signaling`, `node server.js`, PORT=8081).
+**Next action:** M4 — Admin → Projector data channel: push captured images/code from Admin to Projector full-screen.
 
 ## How to update this file
 
@@ -34,37 +34,42 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] ESLint, Vitest, typecheck, static web export
 - [x] Web export verified (all routes render statically)
 - [x] App identity: `com.clearrelay.app`, scheme `clearrelay`
-- [ ] Native prebuild + dev-client build on Android (not run yet)
-- [ ] Native prebuild + dev-client build on iOS (requires macOS)
+- [~] Native prebuild — Android permissions + react-native-webrtc wired; prebuild not run in CI yet (APK tag not pushed)
+- [ ] Native prebuild + dev-client build on iOS (requires macOS or EAS)
 - [x] Styling decision: Tamagui/NativeWind deferred; plain StyleSheet is in use
 
-### M1 — WebRTC loopback + QR pairing
+### M1 — WebRTC loopback + pairing
 
 - [x] `IConnection` web implementation (data channel + video transceiver)
-- [ ] `IConnection` native implementation (`react-native-webrtc`) — deferred until the native prebuild phase
-- [x] Non-trickle ICE gathering for QR mode (with a timeout so a slow STUN server cannot block pairing)
+- [x] `IConnection` native implementation (`react-native-webrtc`) — `connection.ts`
+- [x] Non-trickle ICE gathering with timeout
 - [x] SDP gzip + base64 compression (`fflate`, `CR1.` prefix)
-- [ ] Chunked/animated QR fallback and reassembly — not needed at current sizes (~2.4 KB fits one version-40-L QR)
-- [~] QR scan plus answer-QR round trip — scanner and manual code entry are both wired; manual round trip E2E-verified, physical QR scanning not yet exercised on two phones
-- [x] Two-browser-tab data-channel echo test (two-context headless E2E: offer/answer exchange, `hello` role message, live video)
-- [~] Unit tests for SDP compression and QR chunk reassembly — compression/invalid-code tests added; chunk reassembly not applicable yet
+- [ ] Chunked/animated QR fallback — not needed; room-code path supersedes QR for remote pairing
+- [x] Room-code pairing (6-char codes via WebSocket signaling relay) — replaces QR as primary pairing method
+- [x] Two-browser-tab data-channel echo test (E2E verified: offer/answer, hello message, live video)
+- [x] Unit tests for SDP compression (14 total passing)
 
 ### M2 — Live video Recorder → Admin
 
 - [x] Web camera source (`getUserMedia`) behind `ICameraSource`
-- [ ] Native camera source (Vision Camera) + format selection — deferred until the native prebuild phase
+- [x] Native camera source (`react-native-webrtc` mediaDevices) — `camera.ts`
+- [x] 3-attempt getUserMedia fallback chain with HD min-floor constraints
+- [x] Rear camera default (`facingMode: environment`)
+- [x] `flipCamera()`, `getActualSettings()`, `lockExposureFocusWhiteBalance()`
 - [x] Remote video track render in Admin
-- [x] Encoder params: `maintain-resolution`, low FPS, high bitrate (`scaleResolutionDownBy: 1`, `maxFramerate`, `maxBitrate`)
-- [x] Recorder waits for Admin and shows pairing state
-- [ ] Battery guard: pause camera/CV/encoder when the app backgrounds, resume on return
-- [x] Only the active role's pipeline runs; no background capture from the role picker
+- [x] Encoder params re-applied at WebRTC connected state (`maintain-resolution`, low FPS, high bitrate)
+- [x] Camera settings display (resolution × fps · facingMode) in Recorder UI
+- [x] Recorder shows connection status chip and camera controls (Re-lock, Flip, Stop/Start)
+- [ ] Battery guard: pause camera/encoder when app backgrounds
 
 ### M3 — Admin capture + gallery
 
-- [ ] Freeze a full-intrinsic-resolution still
-- [ ] In-memory gallery with thumbnails and preview
-- [ ] Crop / rotate / enhance
-- [ ] Responsive two-pane desktop and stacked mobile layout
+- [x] Capture at intrinsic video resolution (`video.videoWidth × video.videoHeight`)
+- [x] CSS filter on canvas (`contrast(1.3) brightness(1.05) saturate(0.75)`) for text clarity
+- [x] In-memory gallery with thumbnails and full preview pane
+- [x] `VideoView` exposes `onVideoElement` so Admin can draw to canvas from the live `<video>` element
+- [ ] Crop / rotate / enhance controls
+- [x] Two-pane Admin layout: live feed left, send-to-Projector right
 
 ### M4 — Admin → Projector (Link B)
 
@@ -73,7 +78,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [ ] Backpressure via `bufferedAmountLowThreshold`
 - [ ] Projector reassembly and full-screen image render
 - [ ] Projector keeps the last item until the next push
-- [ ] Admin can send text/code and images from the right-hand panel
+- [ ] Admin sends from gallery or code tab to Projector
 
 ### M5 — CV enhancement pipeline
 
@@ -85,7 +90,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 
 ### M6 — Camera lock + clarity tuning
 
-- [ ] Exposure/focus/white-balance lock after convergence
+- [~] Exposure/focus/white-balance lock after convergence (web best-effort via `applyConstraints`; native same)
 - [ ] Torch control and glare warning
 - [ ] Quality presets (Clarity / Balanced)
 - [ ] Anti-moiré and codec tests
@@ -100,86 +105,83 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 
 ### M8 — Signaling helper + remote pairing
 
-- [ ] `services/signaling` WebSocket room server
-- [ ] Room codes and trickle ICE
-- [ ] Dockerfile + Caddy/wss deployment notes
-- [ ] Optional TURN (`infra/coturn`) only for hard NAT
-- [ ] Remote pairing demo across two networks
+- [x] `services/signaling/server.js` WebSocket room server (plain JS, no build step)
+- [x] 6-char room codes (confusable chars excluded); rooms expire after 30 min
+- [x] Deployed to Railway: `wss://omni-relay-production-d45c.up.railway.app` (root dir `services/signaling`, PORT=8081)
+- [x] `SignalClient` browser class (`signal-ws.ts`) with 10 s connect timeout
+- [x] URL baked into `config/index.ts` default; overridable via `EXPO_PUBLIC_SIGNALING_URL`
+- [ ] Dockerfile / self-host notes
+- [ ] Optional TURN for hard NAT
 
 ### M9 — Resilience, polish, packaging
 
 - [ ] Heartbeats and auto-reconnect
 - [ ] Status UI and session PIN
 - [ ] Full responsive Admin polish
-- [x] Web deploy workflow
-- [ ] Android release build + signing
-- [ ] iOS build/TestFlight
+- [x] Web deploy workflow (GitHub Pages, auto on push to main)
+- [x] GitHub Actions Android APK workflow (`build-android.yml`, triggers on `v*` tags)
+- [ ] Push `v0.1.0` tag to produce first APK in GitHub Releases
+- [ ] Install and smoke-test the APK on a physical Android device
+- [ ] iOS build (PWA via Pages is the personal-use path; EAS for wider distribution)
 - [ ] Final device matrix and release checklist
 
 ## Access and identity
 
-- [x] Local access-key gate on the home screen and every role route/deep link
-- [x] Built-in client-side key in `src/config/index.ts`; no server or repository secret
+- [x] Local access-key gate on the home screen and every role route
+- [x] Built-in client-side key `ACCESS_KEY = 'Thiswillbekey1901'` in `config/index.ts`
 - [x] Optional extra keys via `EXPO_PUBLIC_ACCESS_KEYS`
 - [x] Session-only unlock; **Lock session** returns to the gate
 - [x] Access gate unit tests (accept, reject, lock clears role)
-- [ ] Pairing-level PIN/session secret (real per-session control)
 - [x] Key rotation by editing `ACCESS_KEY` and redeploying
-- [!] Real authentication is **not** provided by the local key: it is embedded in the public bundle and can be extracted. Do not treat it as a security boundary.
+- [!] Not authentication — key is in the public bundle. Do not treat as a security boundary.
 
 ## Admin / Projector UX
 
-- [x] Admin route has a left live-feed pane and a right send-to-Projector pane
-- [x] Image / Code tabs in the send pane (draft UI only)
-- [x] Projector route uses the user-facing name and preserves `/display` as a redirect alias
-- [x] Live feed rendering (M2, web): remote track + pairing state + data-channel role check
-- [ ] Capture and send actions enabled (M3/M4)
-- [ ] Projector orientation and full-screen behavior
-- [ ] Mobile Admin layout verification on a physical device
+- [x] Admin: left live-feed pane + right send-to-Projector pane
+- [x] Admin: session panel with room code display and per-device status chips
+- [x] Admin: screenshot gallery with thumbnail strip and preview
+- [x] Admin: Image / Code tabs in send pane (Code tab is draft UI; send action is M4)
+- [x] Projector: 6-char code entry → "Connected to Admin" badge → content placeholder
+- [x] Recorder: code entry → camera auto-starts on connect → Re-lock / Flip / Stop controls
+- [ ] Projector full-screen image render (M4)
+- [ ] Mobile Admin layout verification on physical device
 
 ## Distribution
 
-- [x] Initialize the local git repository and push `main` to GitHub
-- [x] GitHub Actions CI workflow: typecheck, lint, tests, web export
-- [x] First green CI run on GitHub
-- [x] GitHub Pages deployment workflow with `/omni-relay` base path
-- [x] Repository is public, so GitHub Pages is eligible on the Free plan
-- [x] No repository secret required; the access key is built into the client
-- [x] Enable GitHub Pages (Source: GitHub Actions)
-- [x] First successful `Deploy web` run
-- [x] Verify the live key gate at `https://naveenmorla1901.github.io/omni-relay/`
-- [x] Deploy the M1/M2 web build (`9fdf904`) and verify the live bundle includes the pairing code
-- [x] Pages SPA fallback (`404.html`) so direct role URLs survive a reload
-- [ ] Android release keystore + signing secrets
-- [ ] GitHub Actions APK build
-- [ ] Upload signed APK to GitHub Releases
-- [ ] Install and smoke-test the APK on a physical Android device
-- [ ] Share install link + access key with intended users
+- [x] GitHub repo public at `https://github.com/naveenmorla1901/omni-relay`
+- [x] GitHub Actions CI: typecheck, lint, tests, web export
+- [x] GitHub Pages deploy workflow — live at `https://naveenmorla1901.github.io/omni-relay/`
+- [x] `.npmrc` with fetch-retry hardening for CI
+- [x] iOS personal use: add GitHub Pages URL to Safari home screen as PWA
+- [x] Android APK CI workflow ready (`build-android.yml` — `assembleDebug`, triggers on `v*` tag or manual)
+- [x] Download APK button on home screen links to `github.com/naveenmorla1901/omni-relay/releases/latest`
+- [ ] Push `v0.1.0` tag → first APK in GitHub Releases
+- [ ] Android keystore + signed release APK (future)
 
 ## Decisions
 
-- **Serverless definition:** no cloud backend, database, or media server. Static hosting for the web UI is allowed; media/data stays peer-to-peer.
-- **Web hosting recommendation:** GitHub Pages for the static Expo web export. It is free, HTTPS, and has no runtime backend. The optional signaling helper stays self-hosted for remote pairing.
-- **Projector naming:** UI and route use **Projector**; the wire role remains `display` for compatibility with the plan/protocol.
-- **Access key:** a local front-door for casual access control, not authentication. The built-in `ACCESS_KEY` in `src/config/index.ts` is bundled into the public client; change it and redeploy to rotate. No server or GitHub secret involved.
-- **GitHub Pages base path:** `EXPO_BASE_URL=/omni-relay` is injected by the deploy workflow so local dev stays at the root.
-- **APK path:** build locally or with GitHub Actions; do not require EAS cloud. Publish to GitHub Releases.
-- **Default pairing:** QR (serverless). Room-code signaling is optional until M8.
-- **Web-first live feed:** the browser Recorder and Admin are the v1 default because GitHub Pages is the current distribution surface. Native `IConnection`/`ICameraSource` implementations stay behind the same interfaces and are deferred until the native prebuild/APK phase.
-- **Pairing codes:** gzip + base64url (`CR1.` prefix). Both QR and copy/paste are first-class; the QR is a convenience, not a requirement.
+- **Serverless definition:** no cloud backend, media server, or database. Static GitHub Pages for web UI; signaling relay for room codes only; media stays P2P.
+- **Pairing:** room codes via WebSocket signaling relay (M8 pulled forward). QR/copy-paste path still works but is no longer the primary UI.
+- **Signaling server:** plain JS (`server.js`) on Railway, root dir `services/signaling`, `node server.js`, PORT=8081. URL baked into `config/index.ts` default.
+- **Projector naming:** UI uses **Projector**; wire role stays `display`.
+- **Access key:** client-side gate only; `ACCESS_KEY` in `config/index.ts`; not a security boundary.
+- **GitHub Pages base path:** `EXPO_BASE_URL=/omni-relay` injected by deploy workflow.
+- **Android APK:** `assembleDebug` (no keystore needed); publish to GitHub Releases via `v*` tag.
+- **iOS personal use:** PWA via GitHub Pages (Safari → Add to Home Screen). No Apple Developer account needed.
+- **Native WebRTC:** `react-native-webrtc` for both `IConnection` and `ICameraSource`. Do NOT add it to `expo.plugins` in `app.json` — it has no config plugin and crashes the web export.
+- **Camera capture quality:** intrinsic resolution (`video.videoWidth × video.videoHeight`) + canvas CSS filter (`contrast(1.3) brightness(1.05) saturate(0.75)`).
 
 ## Open questions / decisions needed
 
-- [x] GitHub Pages is the Admin/Projector web target; the live site is up.
-- [x] Web Recorder is supported in v1; native is an optimization/APK path, not a requirement for the browser workflow.
-- [ ] Confirm the real two-phone QR scan + camera-permission flow (manual code path is E2E-verified; user test in progress).
-- [ ] Decide whether a stronger pairing PIN/session secret is needed for real access control.
-- [ ] Choose the Android application ID if `com.clearrelay.app` is not desired.
+- [ ] Push `v0.1.0` tag when ready to produce the first Android APK.
+- [ ] Confirm end-to-end three-device session on real hardware (Admin laptop + Recorder phone + Projector screen).
+- [ ] M4 Link B design: direct WebRTC session between Admin and Projector, or relay through signaling server?
+- [ ] Decide whether pairing PIN/session secret is needed for real access control.
 
 ## Session log
 
-- **2026-10-19** — Scaffolded the Expo workspace, role routes, protocol/config modules, tests, lint, and static web export. Added the access-key gate (including a guard for direct role URLs), Projector naming, Admin/Projector UI skeletons, app identity, project status tracker, deployment notes, and a GitHub Actions CI workflow. Verified with 10 unit tests, typecheck, lint, and web export. Next: M1 WebRTC loopback.
-- **2026-10-19** — Initialized git, committed M0, and pushed `main` to `https://github.com/naveenmorla1901/omni-relay`. Added the GitHub Pages deploy workflow, dynamic `EXPO_BASE_URL` support, fail-closed production access keys, and the private-repo Pages notes. Pages activation and the access-key secret are the remaining deploy steps.
-- **2026-10-19** — Repo made public; CI is green. `Deploy web` is blocked only on the missing `EXPO_PUBLIC_ACCESS_KEYS` repository secret, so Pages is not enabled yet.
-- **2026-10-19** — Moved to a built-in client-side access key (`ACCESS_KEY`), removed the Pages secret requirement, and simplified the gate. No server-side key storage. Pages was enabled; `Deploy web` succeeded and the live key gate at `https://naveenmorla1901.github.io/omni-relay/` was verified. The build is still the M0 UI shell: no WebRTC, camera, media, or APK.
-- **2026-10-19** — Implemented the web half of M1/M2: browser `IConnection` (data channel + video transceiver + encoder clarity params), non-trickle ICE with timeout, gzip/base64url pairing codes (`CR1.`), `ICameraSource` web implementation (`getUserMedia`), QR generate/scan, manual copy/paste fallback, and working Recorder → Admin pairing/live-feed screens. Added 4 signal unit tests (14 total). Verified with a two-context headless E2E run: offer → answer → connect, data-channel `hello`, and live 320×240 video on both sides. The `9fdf904` `Deploy web` run is green and the live bundle includes the pairing code. Native implementations remain stubs; M3 capture/gallery is next.
+- **2026-10-19** — M0 scaffold: Expo workspace, role routes, protocol/config modules, tests, lint, web export, access-key gate, GitHub Actions CI.
+- **2026-10-19** — Git init, push to GitHub, Pages deploy workflow, dynamic `EXPO_BASE_URL`, public repo, Pages enabled.
+- **2026-10-19** — Built-in access key, Pages live, M0 UI shell deployed.
+- **2026-10-19** — M1/M2 web: browser `IConnection`, ICE, SDP compression, `ICameraSource`, QR/copy-paste pairing, live Recorder→Admin feed. 14 unit tests. E2E verified.
+- **2026-10-19** — M3 + M8 + native + Android CI: room-code pairing via WebSocket relay (`signal-ws.ts` + `server.js`), Admin screenshot gallery at intrinsic resolution, camera improvements (fallback chain, rear-camera default, flip, re-lock, settings display), encoder params fix, `IConnection`/`ICameraSource` native implementations (`react-native-webrtc`), Android APK GitHub Actions workflow, Download APK button on home screen. Signaling server deployed to Railway (`wss://omni-relay-production-d45c.up.railway.app`). All three roles connecting end-to-end. CLAUDE.md added.

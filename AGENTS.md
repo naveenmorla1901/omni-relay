@@ -2,7 +2,7 @@
 
 ClearRelay is a greenfield Expo + WebRTC app. `ClearRelay-Build-Plan.md` is the canonical spec: read §1–5, §11, and §21 before architectural work. Build in M0→M9 order (§15) and keep each milestone demoable.
 
-**Current state:** Web half of M1/M2 is done: the browser Recorder pairs with Admin by QR or copy/paste code, streams `getUserMedia` video over WebRTC, and Admin renders the live remote track. Native `IConnection`/`ICameraSource` implementations are still stubs, and native prebuild/dev-client builds have not been run. M3 — Admin capture + gallery — is next.
+**Current state:** M1–M3 web + M8 signaling are done. All three roles connect via 6-char room codes through a Railway WebSocket relay (`wss://omni-relay-production-d45c.up.railway.app`). Admin shows live feed from Recorder and captures full-resolution stills in an in-memory gallery. Native `IConnection`/`ICameraSource` are implemented via `react-native-webrtc`. Android APK CI workflow is ready (push a `v*` tag to build). iOS personal use via PWA (GitHub Pages → Safari → Add to Home Screen). M4 (Admin→Projector Link B) is next.
 
 **Progress tracking:** `PROJECT-STATUS.md` is the live checklist and stop point. At the end of every working session, update its checkboxes, current stop point, next action, and session log. Do not let it drift from the code.
 
