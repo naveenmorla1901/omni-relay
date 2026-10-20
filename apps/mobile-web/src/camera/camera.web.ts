@@ -5,6 +5,7 @@ import type { CameraDevice, CameraFormat } from './types';
 
 class WebCameraSource implements ICameraSource {
   private stream: MediaStream | null = null;
+  private facingMode: 'user' | 'environment' = 'environment';
 
   async requestPermission(): Promise<boolean> {
     return Boolean(globalThis.navigator?.mediaDevices?.getUserMedia);
@@ -35,9 +36,9 @@ class WebCameraSource implements ICameraSource {
 
   async getFormats(_deviceId: string): Promise<CameraFormat[]> {
     return [
+      { ...CONFIG.CAMERA_PREFERRED_RESOLUTION, fps: CONFIG.TARGET_FPS },
       { ...CONFIG.CAPTURE_RESOLUTION, fps: CONFIG.TARGET_FPS },
-      { width: 1280, height: 720, fps: CONFIG.TARGET_FPS },
-      { width: 640, height: 480, fps: CONFIG.TARGET_FPS },
+      { ...CONFIG.CAMERA_FALLBACK_RESOLUTION, fps: CONFIG.TARGET_FPS },
     ];
   }
 
@@ -48,14 +49,14 @@ class WebCameraSource implements ICameraSource {
 
     this.stop();
 
-    // Try progressively relaxed constraints so we always get a stream.
-    // Attempt 1: preferred rear camera + HD minimum floor
-    // Attempt 2: drop the min floor (some browsers reject it even when they support HD)
-    // Attempt 3: bare fallback (any camera, any resolution)
+    // Try progressively relaxed constraints. The first request preserves the
+    // resolution floor; later requests trade only resolution for compatibility.
+    const preferred = CONFIG.CAMERA_PREFERRED_RESOLUTION;
+    const minimum = CONFIG.CAMERA_MIN_RESOLUTION;
     const attempts: MediaTrackConstraints[] = [
       {
-        width: { min: 1280, ideal: 3840 },
-        height: { min: 720, ideal: 2160 },
+        width: { min: minimum.width, ideal: preferred.width },
+        height: { min: minimum.height, ideal: preferred.height },
         frameRate: { ideal: format.fps, max: format.fps },
         ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
       },
@@ -66,7 +67,10 @@ class WebCameraSource implements ICameraSource {
         ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
       },
       {
-        facingMode: { ideal: 'environment' },
+        width: { ideal: CONFIG.CAMERA_FALLBACK_RESOLUTION.width },
+        height: { ideal: CONFIG.CAMERA_FALLBACK_RESOLUTION.height },
+        frameRate: { ideal: format.fps, max: format.fps },
+        ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
       },
     ];
 
@@ -74,9 +78,9 @@ class WebCameraSource implements ICameraSource {
     for (const constraints of attempts) {
       try {
         this.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: constraints });
-        // Tell the WebRTC encoder to prioritise detail/sharpness over motion smoothness.
-        const vt = this.stream.getVideoTracks()[0];
-        if (vt && 'contentHint' in vt) (vt as MediaStreamTrack & { contentHint: string }).contentHint = 'detail';
+        this.markTrackForDetail();
+        const actualFacing = this.getVideoTrack()?.getSettings().facingMode;
+        this.facingMode = actualFacing === 'user' ? 'user' : 'environment';
         return;
       } catch (err) {
         lastError = err;
@@ -97,6 +101,23 @@ class WebCameraSource implements ICameraSource {
     }
 
     this.stream = null;
+  }
+
+  async autoAdjustForDocument(): Promise<void> {
+    const track = this.getVideoTrack();
+    if (!track) return;
+
+    try {
+      await track.applyConstraints({
+        advanced: [
+          { exposureMode: 'continuous' } as MediaTrackConstraintSet,
+          { focusMode: 'continuous' } as MediaTrackConstraintSet,
+          { whiteBalanceMode: 'continuous' } as MediaTrackConstraintSet,
+        ],
+      });
+    } catch {
+      // Safari and many Android browsers do not expose these controls.
+    }
   }
 
   async lockExposureFocusWhiteBalance(): Promise<void> {
@@ -136,6 +157,7 @@ class WebCameraSource implements ICameraSource {
 
     const current = track.getSettings().facingMode;
     const next = current === 'environment' ? 'user' : 'environment';
+    this.facingMode = next;
 
     try {
       await track.applyConstraints({ facingMode: { exact: next } });
@@ -154,6 +176,12 @@ class WebCameraSource implements ICameraSource {
       };
       this.stop();
       this.stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: overrides });
+      this.markTrackForDetail();
+    }
+
+    const actualFacing = this.getVideoTrack()?.getSettings().facingMode;
+    if (actualFacing === 'user' || actualFacing === 'environment') {
+      this.facingMode = actualFacing;
     }
   }
 
@@ -169,7 +197,7 @@ class WebCameraSource implements ICameraSource {
       width: s.width ?? 0,
       height: s.height ?? 0,
       fps: Math.round((s.frameRate ?? 0) * 10) / 10,
-      facingMode: s.facingMode,
+      facingMode: s.facingMode ?? this.facingMode,
     };
   }
 
@@ -180,6 +208,13 @@ class WebCameraSource implements ICameraSource {
 
   private getVideoTrack(): MediaStreamTrack | null {
     return this.stream?.getVideoTracks()[0] ?? null;
+  }
+
+  private markTrackForDetail(): void {
+    const track = this.getVideoTrack();
+    if (track && 'contentHint' in track) {
+      (track as MediaStreamTrack & { contentHint: string }).contentHint = 'detail';
+    }
   }
 }
 

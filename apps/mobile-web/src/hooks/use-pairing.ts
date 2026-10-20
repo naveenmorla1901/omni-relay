@@ -4,7 +4,7 @@ import { createConnection } from '@/connection';
 import type { ConnectionState, IConnection } from '@/connection/IConnection';
 import { SignalClient } from '@/connection/signal-ws';
 import { CONFIG } from '@/config';
-import type { Role } from '@/protocol/messages';
+import type { CameraFacingMode, Role } from '@/protocol/messages';
 import { parseMessage, serializeMessage } from '@/protocol/messages';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -37,6 +37,12 @@ export type UsePairingResult = {
   /** Whether the Projector/Display has joined the WS room. */
   projectorJoined: boolean;
 
+  /** Admin: whether the Recorder's current preview should be mirrored. */
+  remoteCameraMirrored: boolean;
+
+  /** Increments when Recorder asks Admin to re-run document detection. */
+  redetectRequested: number;
+
   peerRole: Role | null;
   error: string | null;
   busy: boolean;
@@ -52,6 +58,12 @@ export type UsePairingResult = {
 
   /** Recorder: attach local camera track to the WebRTC connection. */
   attachVideoTrack(track: MediaStreamTrack): void;
+
+  /** Recorder: publish camera orientation without changing the v1 hello shape. */
+  updateCameraFacingMode(facingMode?: string, mirrored?: boolean): void;
+
+  /** Recorder: ask Admin to re-run quad detection on its current/next capture. */
+  requestRedetection(): void;
 
   /** Admin: push a data-URL image to the connected Projector via the WS relay. */
   pushImage(dataUrl: string): void;
@@ -69,6 +81,8 @@ export function usePairing(role: PairingRole): UsePairingResult {
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
   const [recorderJoined, setRecorderJoined] = useState(false);
   const [projectorJoined, setProjectorJoined] = useState(false);
+  const [remoteCameraMirrored, setRemoteCameraMirrored] = useState(false);
+  const [redetectRequested, setRedetectRequested] = useState(0);
   const [peerRole, setPeerRole] = useState<Role | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [receivedImage, setReceivedImage] = useState<{ data: string; mime: string } | null>(null);
@@ -93,6 +107,8 @@ export function usePairing(role: PairingRole): UsePairingResult {
     setRemoteStream(null);
     setRecorderJoined(false);
     setProjectorJoined(false);
+    setRemoteCameraMirrored(false);
+    setRedetectRequested(0);
     setPeerRole(null);
     setError(null);
     setReceivedImage(null);
@@ -127,7 +143,13 @@ export function usePairing(role: PairingRole): UsePairingResult {
     conn.onData((msg) => {
       if (connectionRef.current !== conn || typeof msg !== 'string') return;
       const parsed = parseMessage(msg);
-      if (parsed?.t === 'hello') setPeerRole(parsed.role);
+      if (!parsed) return;
+      if (parsed.t === 'hello') setPeerRole(parsed.role);
+      else if (parsed.t === 'camera') {
+        setRemoteCameraMirrored(parsed.mirrored);
+      } else if (parsed.t === 'redetect' && role === 'admin') {
+        setRedetectRequested((count) => count + 1);
+      }
     });
 
     return conn;
@@ -149,6 +171,8 @@ export function usePairing(role: PairingRole): UsePairingResult {
     setRecorderJoined(false);
     setProjectorJoined(false);
     setRemoteStream(null);
+    setRemoteCameraMirrored(false);
+    setRedetectRequested(0);
     setPeerRole(null);
     setConnectionState('new');
     setPhase('creating');
@@ -238,6 +262,8 @@ export function usePairing(role: PairingRole): UsePairingResult {
     setRoomCode(null);
     setConnectionState('new');
     setRemoteStream(null);
+    setRemoteCameraMirrored(false);
+    setRedetectRequested(0);
     setPeerRole(null);
     setPhase('joining');
 
@@ -329,6 +355,21 @@ export function usePairing(role: PairingRole): UsePairingResult {
     connectionRef.current?.attachVideoTrack(track);
   }, []);
 
+  const updateCameraFacingMode = useCallback((facingMode?: string, mirrored = false) => {
+    const normalized: CameraFacingMode =
+      facingMode === 'user' || facingMode === 'environment' ? facingMode : 'unknown';
+    connectionRef.current?.sendData(serializeMessage({
+      v: 1,
+      t: 'camera',
+      facingMode: normalized,
+      mirrored,
+    }));
+  }, []);
+
+  const requestRedetection = useCallback(() => {
+    connectionRef.current?.sendData(serializeMessage({ v: 1, t: 'redetect' }));
+  }, []);
+
   // ── Result ─────────────────────────────────────────────────────────────────
 
   return {
@@ -338,6 +379,8 @@ export function usePairing(role: PairingRole): UsePairingResult {
     remoteStream,
     recorderJoined,
     projectorJoined,
+    remoteCameraMirrored,
+    redetectRequested,
     peerRole,
     error,
     busy: phase === 'creating' || phase === 'joining' || phase === 'exchanging' || phase === 'connecting',
@@ -345,6 +388,8 @@ export function usePairing(role: PairingRole): UsePairingResult {
     createRoom,
     joinRoom,
     attachVideoTrack,
+    updateCameraFacingMode,
+    requestRedetection,
     pushImage,
     reset,
   };

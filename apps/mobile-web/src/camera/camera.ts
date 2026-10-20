@@ -36,25 +36,49 @@ class NativeCameraSource implements ICameraSource {
 
   async getFormats(_deviceId: string): Promise<CameraFormat[]> {
     return [
+      { ...CONFIG.CAMERA_PREFERRED_RESOLUTION, fps: CONFIG.TARGET_FPS },
       { ...CONFIG.CAPTURE_RESOLUTION, fps: CONFIG.TARGET_FPS },
-      { width: 1280, height: 720, fps: CONFIG.TARGET_FPS },
-      { width: 640, height: 480, fps: CONFIG.TARGET_FPS },
+      { ...CONFIG.CAMERA_FALLBACK_RESOLUTION, fps: CONFIG.TARGET_FPS },
     ];
   }
 
   async start(deviceId: string, format: CameraFormat): Promise<void> {
     this.stop();
-    const video: Record<string, unknown> = {
-      width: { ideal: format.width },
-      height: { ideal: format.height },
-      frameRate: { ideal: format.fps, max: format.fps },
-    };
-    if (deviceId) {
-      video.deviceId = deviceId;
-    } else {
-      video.facingMode = { ideal: this.facingMode };
+    const preferred = CONFIG.CAMERA_PREFERRED_RESOLUTION;
+    const attempts: Record<string, unknown>[] = [
+      {
+        width: { ideal: preferred.width },
+        height: { ideal: preferred.height },
+        frameRate: { ideal: format.fps, max: format.fps },
+      },
+      {
+        width: { ideal: format.width },
+        height: { ideal: format.height },
+        frameRate: { ideal: format.fps, max: format.fps },
+      },
+      {
+        width: { ideal: CONFIG.CAMERA_FALLBACK_RESOLUTION.width },
+        height: { ideal: CONFIG.CAMERA_FALLBACK_RESOLUTION.height },
+        frameRate: { ideal: format.fps, max: format.fps },
+      },
+    ];
+
+    let lastError: unknown;
+    for (const video of attempts) {
+      if (deviceId) {
+        video.deviceId = deviceId;
+      } else {
+        video.facingMode = { ideal: this.facingMode };
+      }
+      try {
+        this.stream = await mediaDevices.getUserMedia({ audio: false, video });
+        this.markTrackForDetail();
+        return;
+      } catch (error) {
+        lastError = error;
+      }
     }
-    this.stream = await mediaDevices.getUserMedia({ audio: false, video });
+    throw lastError ?? new Error('Could not start the camera.');
   }
 
   stop(): void {
@@ -62,6 +86,20 @@ class NativeCameraSource implements ICameraSource {
       for (const t of (this.stream as any).getTracks()) t.stop();
       this.stream = null;
     }
+  }
+
+  async autoAdjustForDocument(): Promise<void> {
+    const track = this.getVideoTrack();
+    if (!track) return;
+    try {
+      await track.applyConstraints({
+        advanced: [
+          { exposureMode: 'continuous' } as MediaTrackConstraintSet,
+          { focusMode: 'continuous' } as MediaTrackConstraintSet,
+          { whiteBalanceMode: 'continuous' } as MediaTrackConstraintSet,
+        ],
+      });
+    } catch { /* best-effort */ }
   }
 
   async lockExposureFocusWhiteBalance(): Promise<void> {
@@ -72,6 +110,7 @@ class NativeCameraSource implements ICameraSource {
         advanced: [
           { exposureMode: 'manual' } as MediaTrackConstraintSet,
           { focusMode: 'manual' } as MediaTrackConstraintSet,
+          { whiteBalanceMode: 'manual' } as MediaTrackConstraintSet,
         ],
       });
     } catch { /* best-effort */ }
@@ -89,8 +128,7 @@ class NativeCameraSource implements ICameraSource {
     this.facingMode = this.facingMode === 'environment' ? 'user' : 'environment';
     if (this.stream) {
       const format: CameraFormat = {
-        width: CONFIG.CAPTURE_RESOLUTION.width,
-        height: CONFIG.CAPTURE_RESOLUTION.height,
+        ...CONFIG.CAPTURE_RESOLUTION,
         fps: CONFIG.TARGET_FPS,
       };
       await this.start('', format);
@@ -119,6 +157,13 @@ class NativeCameraSource implements ICameraSource {
 
   private getVideoTrack(): MediaStreamTrack | null {
     return ((this.stream as any)?.getVideoTracks()[0] ?? null) as MediaStreamTrack | null;
+  }
+
+  private markTrackForDetail(): void {
+    const track = this.getVideoTrack();
+    if (track && 'contentHint' in track) {
+      (track as MediaStreamTrack & { contentHint: string }).contentHint = 'detail';
+    }
   }
 }
 

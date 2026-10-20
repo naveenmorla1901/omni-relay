@@ -9,13 +9,18 @@ export type ProtocolVersion = typeof PROTOCOL_VERSION;
 /** `display` is the wire/plan name; the app presents it as Projector. */
 export type Role = 'recorder' | 'admin' | 'display';
 export type SignalingMode = 'qr' | 'ws';
+export type CameraFacingMode = 'user' | 'environment' | 'unknown';
 
 /** Link A control channel and general session control. */
 export type ControlMsg =
   | { v: ProtocolVersion; t: 'hello'; role: Role; caps: string[] }
   | { v: ProtocolVersion; t: 'heartbeat'; ts: number }
   | { v: ProtocolVersion; t: 'quality'; fps: number; bitrate: number }
-  | { v: ProtocolVersion; t: 'status'; state: string };
+  | { v: ProtocolVersion; t: 'status'; state: string }
+  /** Recorder state used to keep the Admin preview orientation in sync. */
+  | { v: ProtocolVersion; t: 'camera'; facingMode: CameraFacingMode; mirrored: boolean }
+  /** Recorder asks Admin to re-run capture detection after a camera re-lock. */
+  | { v: ProtocolVersion; t: 'redetect' };
 
 /** Link B (Admin -> Display) payloads. */
 export type DisplayPush =
@@ -78,6 +83,13 @@ function isControlMsg(value: Record<string, unknown>): value is ControlMsg {
       return isFiniteNumber(value.fps) && isFiniteNumber(value.bitrate);
     case 'status':
       return typeof value.state === 'string';
+    case 'camera':
+      return (
+        (value.facingMode === 'user' || value.facingMode === 'environment' || value.facingMode === 'unknown') &&
+        typeof value.mirrored === 'boolean'
+      );
+    case 'redetect':
+      return true;
     default:
       return false;
   }

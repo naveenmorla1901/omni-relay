@@ -11,6 +11,8 @@ export interface ICameraSource {
   start(deviceId: string, format: CameraFormat): Promise<void>;
   stop(): void;
 
+  /** Let auto-exposure/focus/white-balance converge before locking. */
+  autoAdjustForDocument(): Promise<void>;
   /** Best-effort on web; fully supported on native. */
   lockExposureFocusWhiteBalance(): Promise<void>;
   setTorch(enabled: boolean): Promise<void>;

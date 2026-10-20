@@ -62,11 +62,14 @@ function RecorderWorkspace() {
       const stream = camera.getStream();
       if (!stream) throw new Error('Camera did not return a stream.');
       setLocalStream(stream);
-      setCameraSettings(camera.getActualSettings());
+      const settings = camera.getActualSettings();
+      setCameraSettings(settings);
       const track = stream.getVideoTracks()[0];
       if (track) pairing.attachVideoTrack(track);
-      // Let camera converge before locking.
-      await new Promise((r) => setTimeout(r, 1500));
+      pairing.updateCameraFacingMode(settings?.facingMode, settings?.facingMode === 'user');
+      // Let auto exposure/focus/white-balance converge before locking.
+      await camera.autoAdjustForDocument();
+      await new Promise((r) => setTimeout(r, CONFIG.CAMERA_AUTO_SETTLE_MS));
       await camera.lockExposureFocusWhiteBalance();
     } catch (err) {
       setCameraError(cameraErrMsg(err));
@@ -85,8 +88,15 @@ function RecorderWorkspace() {
     const cam = cameraRef.current;
     if (!cam || relockBusy) return;
     setRelockBusy(true);
-    try { await cam.lockExposureFocusWhiteBalance(); } finally { setRelockBusy(false); }
-  }, [relockBusy]);
+    try {
+      await cam.autoAdjustForDocument();
+      await new Promise((r) => setTimeout(r, CONFIG.CAMERA_AUTO_SETTLE_MS));
+      await cam.lockExposureFocusWhiteBalance();
+      pairing.requestRedetection();
+    } finally {
+      setRelockBusy(false);
+    }
+  }, [relockBusy, pairing]);
 
   const flipCamera = useCallback(async () => {
     const cam = cameraRef.current;
@@ -98,9 +108,11 @@ function RecorderWorkspace() {
       const stream = cam.getStream();
       if (stream) {
         setLocalStream(stream);
-        setCameraSettings(cam.getActualSettings());
+        const settings = cam.getActualSettings();
+        setCameraSettings(settings);
         const track = stream.getVideoTracks()[0];
         if (track) pairing.attachVideoTrack(track);
+        pairing.updateCameraFacingMode(settings?.facingMode, settings?.facingMode === 'user');
       }
     } catch (err) {
       setCameraError(cameraErrMsg(err));
@@ -223,7 +235,11 @@ function RecorderWorkspace() {
             {connected && (
               <>
                 <View style={[styles.videoBox, { borderColor: theme.border }]}>
-                  <VideoView stream={localStream} placeholder="Starting camera…" />
+                  <VideoView
+                    stream={localStream}
+                    placeholder="Starting camera…"
+                    mirror={cameraSettings?.facingMode === 'user'}
+                  />
                 </View>
 
                 {cameraSettings && (

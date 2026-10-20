@@ -6,10 +6,11 @@ import { ThemedText } from '@/components/themed-text';
 type VideoViewProps = {
   stream: MediaStream | null;
   placeholder?: string;
+  mirror?: boolean;
   onVideoElement?: (el: null) => void;
 };
 
-export function VideoView({ stream, placeholder = 'Starting camera…' }: VideoViewProps) {
+export function VideoView({ stream, placeholder = 'Starting camera…', mirror = false }: VideoViewProps) {
   const streamURL = stream ? (stream as unknown as { toURL(): string }).toURL() : null;
   return (
     <View style={styles.container}>
@@ -18,7 +19,7 @@ export function VideoView({ stream, placeholder = 'Starting camera…' }: VideoV
           streamURL={streamURL}
           style={styles.video}
           objectFit="contain"
-          mirror={false}
+          mirror={mirror}
           zOrder={0}
         />
       ) : (

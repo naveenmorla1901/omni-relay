@@ -18,12 +18,21 @@ const EXTRA_ACCESS_KEYS = (process.env.EXPO_PUBLIC_ACCESS_KEYS ?? '')
 export const ACCESS_KEYS = Array.from(new Set([ACCESS_KEY, ...EXTRA_ACCESS_KEYS]));
 
 export const CONFIG = {
+  /** Low FPS is intentional: preserve pixels for photographed text. */
   TARGET_FPS: 8,
   HIGH_BITRATE_BPS: 8_000_000,
   DEGRADATION: 'maintain-resolution',
+  /** Preferred camera request; devices may negotiate a lower actual size. */
+  CAMERA_PREFERRED_RESOLUTION: { width: 3840, height: 2160 },
+  CAMERA_MIN_RESOLUTION: { width: 1280, height: 720 },
+  CAMERA_FALLBACK_RESOLUTION: { width: 640, height: 480 },
   CAPTURE_RESOLUTION: { width: 1920, height: 1080 },
+  CAMERA_AUTO_SETTLE_MS: 1_500,
   QUAD_MOVE_THRESHOLD: 0.03,
   QUAD_SMOOTHING_ALPHA: 0.4,
+  QUAD_MAX_CANDIDATES: 10,
+  QUAD_DETECTION_BUDGET_MS: 1_500,
+  AUTO_CROP_ON_DETECT: true,
   JPEG_WEBP_QUALITY: 0.95,
   DATACHANNEL_CHUNK: 16 * 1024,
   DC_HIGH_WATER: 1 * 1024 * 1024,

@@ -1,5 +1,5 @@
 import { Link } from 'expo-router';
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -17,12 +17,14 @@ import { AccessBoundary } from '@/components/access-boundary';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { VideoView } from '@/components/video-view';
+import { CONFIG } from '@/config';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { usePairing } from '@/hooks/use-pairing';
 import { useTheme } from '@/hooks/use-theme';
 import { enhanceCapture, rotateImage } from '@/lib/cv';
-import { detectAndOverlay, warpAndCrop } from '@/lib/quad';
+import { detectAndOverlay, smoothQuad, warpAndCrop } from '@/lib/quad';
 import type { QuadCorners } from '@/lib/quad';
+import { downloadCapture } from '@/lib/download';
 import { useSessionStore } from '@/store/session';
 
 type SendMode = 'image' | 'code';
@@ -57,7 +59,7 @@ function captureFromVideo(video: HTMLVideoElement): CapturedFrame | null {
 
 function AdminWorkspace() {
   const theme = useTheme();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const lock = useSessionStore((s) => s.lock);
   const pairing = usePairing('admin');
   const [sendMode, setSendMode] = useState<SendMode>('code');
@@ -70,10 +72,44 @@ function AdminWorkspace() {
   const [detectedCorners, setDetectedCorners] = useState<QuadCorners | null>(null);
   const [previewOverlayUrl, setPreviewOverlayUrl] = useState<string | null>(null);
   const [quadProcessing, setQuadProcessing] = useState(false);
+  const [downloadStatus, setDownloadStatus] = useState<string | null>(null);
+  const [zoomScale, setZoomScale] = useState(1);
+  const [autoCropEnabled, setAutoCropEnabled] = useState<boolean>(CONFIG.AUTO_CROP_ON_DETECT);
+  const [preCrop, setPreCrop] = useState<CapturedFrame | null>(null);
+  const [wasCropped, setWasCropped] = useState(false);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
+  const previousQuadRef = useRef<QuadCorners | null>(null);
+  const lastRedetectRef = useRef(0);
+  const detectionIdRef = useRef(0);
+  const cropIdRef = useRef(0);
   const wide = width >= 1000;
   const recorderLive = pairing.phase === 'connected';
   const projectorReady = pairing.projectorJoined;
+
+  const detectCapture = useCallback((frame: CapturedFrame) => {
+    const requestId = ++detectionIdRef.current;
+    setDetectedCorners(null);
+    setPreviewOverlayUrl(null);
+    setQuadProcessing(true);
+    void detectAndOverlay(frame.dataUrl).then(({ corners, overlayDataUrl }) => {
+      // Ignore a slow result if a newer capture/detection has started.
+      if (requestId !== detectionIdRef.current) return;
+      const smoothed = corners
+        ? smoothQuad(
+            previousQuadRef.current,
+            corners,
+            frame.width,
+            frame.height,
+            CONFIG.QUAD_SMOOTHING_ALPHA,
+            CONFIG.QUAD_MOVE_THRESHOLD,
+          )
+        : null;
+      previousQuadRef.current = smoothed;
+      setDetectedCorners(smoothed);
+      setPreviewOverlayUrl(overlayDataUrl);
+      setQuadProcessing(false);
+    });
+  }, []);
 
   const captureStill = useCallback(() => {
     const video = videoElementRef.current;
@@ -83,18 +119,37 @@ function AdminWorkspace() {
     setGallery((prev) => [frame, ...prev].slice(0, 20));
     setActiveCapture(frame);
     setSendStatus(null);
-    setDetectedCorners(null);
-    setPreviewOverlayUrl(null);
-    setQuadProcessing(true);
-    detectAndOverlay(frame.dataUrl).then(({ corners, overlayDataUrl }) => {
-      setDetectedCorners(corners);
-      setPreviewOverlayUrl(overlayDataUrl);
-      setQuadProcessing(false);
-    });
-  }, []);
+    setDownloadStatus(null);
+    cropIdRef.current++;
+    setPreCrop(null);
+    setWasCropped(false);
+    previousQuadRef.current = null;
+    detectCapture(frame);
+  }, [detectCapture]);
+
+  const downloadActive = useCallback(() => {
+    if (!activeCapture) return;
+    downloadCapture(activeCapture.dataUrl, `clearrelay-${activeCapture.id}.jpg`);
+    setDownloadStatus('Downloaded');
+    setTimeout(() => setDownloadStatus(null), 2500);
+  }, [activeCapture]);
+
+  // Recorder's Re-lock button asks the Admin to re-run detection over Link A.
+  useEffect(() => {
+    if (pairing.redetectRequested === 0) {
+      lastRedetectRef.current = 0;
+      return;
+    }
+    if (pairing.redetectRequested <= lastRedetectRef.current) return;
+    lastRedetectRef.current = pairing.redetectRequested;
+    if (!activeCapture) return;
+    const timer = setTimeout(() => detectCapture(activeCapture), 0);
+    return () => clearTimeout(timer);
+  }, [activeCapture, detectCapture, pairing.redetectRequested]);
 
   const rotateCW = useCallback(async () => {
     if (!activeCapture) return;
+    cropIdRef.current++;
     const newDataUrl = await rotateImage(activeCapture.dataUrl, 90);
     const updated: CapturedFrame = {
       ...activeCapture,
@@ -108,6 +163,7 @@ function AdminWorkspace() {
 
   const rotateCCW = useCallback(async () => {
     if (!activeCapture) return;
+    cropIdRef.current++;
     const newDataUrl = await rotateImage(activeCapture.dataUrl, -90);
     const updated: CapturedFrame = {
       ...activeCapture,
@@ -121,22 +177,49 @@ function AdminWorkspace() {
 
   const autoCrop = useCallback(async () => {
     if (!activeCapture || !detectedCorners) return;
-    const newDataUrl = await warpAndCrop(activeCapture.dataUrl, detectedCorners);
+    const cropId = ++cropIdRef.current;
+    const source = activeCapture;
+    const newDataUrl = await warpAndCrop(source.dataUrl, detectedCorners);
+    if (cropId !== cropIdRef.current) return;
     const img = new window.Image();
     img.onload = () => {
-      const updated: CapturedFrame = {
-        ...activeCapture,
+      if (cropId !== cropIdRef.current) return;
+      const cropped: CapturedFrame = {
+        ...source,
+        id: `${source.id}-crop-${Date.now()}`,
+        ts: Date.now(),
         dataUrl: newDataUrl,
         width: img.naturalWidth,
         height: img.naturalHeight,
       };
-      setActiveCapture(updated);
-      setGallery((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
+      setPreCrop((previous) => previous ?? source);
+      setActiveCapture(cropped);
+      // Keep the original in the gallery so a bad auto-crop is never lossy.
+      setGallery((prev) => [cropped, ...prev].slice(0, 20));
       setDetectedCorners(null);
       setPreviewOverlayUrl(null);
+      setWasCropped(true);
     };
     img.src = newDataUrl;
   }, [activeCapture, detectedCorners]);
+
+  const undoCrop = useCallback(() => {
+    if (!preCrop) return;
+    cropIdRef.current++;
+    setActiveCapture(preCrop);
+    setGallery((prev) => prev.map((f) => (f.id === preCrop.id ? preCrop : f)));
+    setPreCrop(null);
+    setDetectedCorners(null);
+    setPreviewOverlayUrl(null);
+    setWasCropped(false);
+  }, [preCrop]);
+
+  // Auto-fit the detected screen after a short pause so the blue overlay is visible.
+  useEffect(() => {
+    if (!autoCropEnabled || wasCropped || quadProcessing || !detectedCorners || !activeCapture) return;
+    const timer = setTimeout(() => { void autoCrop(); }, 450);
+    return () => clearTimeout(timer);
+  }, [activeCapture, autoCrop, autoCropEnabled, detectedCorners, quadProcessing, wasCropped]);
 
   const handleSendToProjector = useCallback(() => {
     if (sendMode === 'image' && activeCapture) {
@@ -286,6 +369,7 @@ function AdminWorkspace() {
                     <VideoView
                       stream={pairing.remoteStream}
                       placeholder="Waiting for camera…"
+                      mirror={pairing.remoteCameraMirrored}
                       onVideoElement={(el) => { videoElementRef.current = el as HTMLVideoElement | null; }}
                     />
                   </View>
@@ -318,7 +402,7 @@ function AdminWorkspace() {
                           return (
                             <Pressable
                               key={frame.id}
-                              onPress={() => { setActiveCapture(frame); setDetectedCorners(null); setPreviewOverlayUrl(null); }}
+                              onPress={() => { cropIdRef.current++; setActiveCapture(frame); setDetectedCorners(null); setPreviewOverlayUrl(null); setDownloadStatus(null); setPreCrop(null); setWasCropped(false); }}
                               style={[
                                 styles.thumb,
                                 { borderColor: active ? theme.accent : theme.border, borderWidth: active ? 2 : 1 },
@@ -362,12 +446,31 @@ function AdminWorkspace() {
                         </Pressable>
                         <Pressable
                           accessibilityRole="button"
-                          onPress={() => setZoomVisible(true)}
+                          onPress={() => { setZoomScale(1); setZoomVisible(true); }}
                           style={({ pressed }) => [
                             styles.iconBtn,
                             { borderColor: theme.border, backgroundColor: pressed ? theme.backgroundSelected : 'transparent' },
                           ]}>
                           <ThemedText type="small">⤢ Zoom</ThemedText>
+                        </Pressable>
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={downloadActive}
+                          style={({ pressed }) => [
+                            styles.iconBtn,
+                            { borderColor: theme.success, backgroundColor: pressed ? theme.backgroundSelected : 'rgba(0,200,100,0.10)' },
+                          ]}>
+                          <ThemedText type="smallBold" style={{ color: theme.success }}>⬇ Download</ThemedText>
+                        </Pressable>
+                        <Pressable
+                          accessibilityRole="button"
+                          disabled={quadProcessing}
+                          onPress={() => detectCapture(activeCapture)}
+                          style={({ pressed }) => [
+                            styles.iconBtn,
+                            { borderColor: theme.border, backgroundColor: pressed ? theme.backgroundSelected : 'transparent', opacity: quadProcessing ? 0.5 : 1 },
+                          ]}>
+                          <ThemedText type="small">{quadProcessing ? 'Detecting…' : '⌕ Detect again'}</ThemedText>
                         </Pressable>
                         {detectedCorners && (
                           <Pressable
@@ -383,8 +486,38 @@ function AdminWorkspace() {
                       </View>
                       <ThemedText type="small" themeColor="textSecondary" style={{ fontSize: 12 }}>
                         {activeCapture.width} × {activeCapture.height} · {new Date(activeCapture.ts).toLocaleTimeString()}
-                        {quadProcessing ? '  · Detecting…' : detectedCorners ? '  · Quad detected' : ''}
+                        {wasCropped ? '  · Cropped' : quadProcessing ? '  · Detecting…' : detectedCorners ? '  · Screen detected' : '  · No screen detected'}
+                        {downloadStatus ? `  · ${downloadStatus}` : ''}
                       </ThemedText>
+                      {!quadProcessing && !detectedCorners && !wasCropped && (
+                        <ThemedText type="small" themeColor="textSecondary" style={{ fontSize: 12 }}>
+                          No screen found. Try a straighter angle or press Re-lock on the Recorder, then Detect again.
+                        </ThemedText>
+                      )}
+                      <View style={styles.row}>
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => setAutoCropEnabled((enabled) => !enabled)}
+                          style={({ pressed }) => [
+                            styles.iconBtn,
+                            { borderColor: autoCropEnabled ? theme.success : theme.border, backgroundColor: pressed ? theme.backgroundSelected : 'transparent' },
+                          ]}>
+                          <ThemedText type="small" style={{ color: autoCropEnabled ? theme.success : theme.text }}>
+                            {autoCropEnabled ? '☑' : '☐'} Auto-crop detected screen
+                          </ThemedText>
+                        </Pressable>
+                        {preCrop && (
+                          <Pressable
+                            accessibilityRole="button"
+                            onPress={undoCrop}
+                            style={({ pressed }) => [
+                              styles.iconBtn,
+                              { borderColor: theme.border, backgroundColor: pressed ? theme.backgroundSelected : 'transparent' },
+                            ]}>
+                            <ThemedText type="small">↶ Undo crop</ThemedText>
+                          </Pressable>
+                        )}
+                      </View>
                     </View>
                   )}
                 </>
@@ -497,13 +630,40 @@ function AdminWorkspace() {
 
       {/* ── Zoom modal ───────────────────────────────────────────── */}
       <Modal visible={zoomVisible} transparent animationType="fade" onRequestClose={() => setZoomVisible(false)}>
-        <Pressable style={styles.zoomOverlay} onPress={() => setZoomVisible(false)}>
-          <Image
-            source={{ uri: activeCapture?.dataUrl ?? '' }}
-            style={styles.zoomImage}
-            resizeMode="contain"
-          />
-        </Pressable>
+        <View style={styles.zoomOverlay}>
+          <View style={styles.zoomToolbar}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setZoomScale((scale) => Math.max(1, scale - 1))}
+              style={styles.zoomBtn}>
+              <ThemedText type="smallBold" style={{ color: '#FFFFFF' }}>−</ThemedText>
+            </Pressable>
+            <ThemedText type="smallBold" style={{ color: '#FFFFFF' }}>{zoomScale}×</ThemedText>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setZoomScale((scale) => Math.min(4, scale + 1))}
+              style={styles.zoomBtn}>
+              <ThemedText type="smallBold" style={{ color: '#FFFFFF' }}>+</ThemedText>
+            </Pressable>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => { setZoomVisible(false); setZoomScale(1); }}
+              style={styles.zoomBtn}>
+              <ThemedText type="smallBold" style={{ color: '#FFFFFF' }}>Close</ThemedText>
+            </Pressable>
+          </View>
+          <ScrollView
+            style={styles.zoomScroll}
+            contentContainerStyle={{ width: width * zoomScale, height: height * zoomScale }}
+            showsHorizontalScrollIndicator
+            showsVerticalScrollIndicator>
+            <Image
+              source={{ uri: activeCapture?.dataUrl ?? '' }}
+              style={{ width: width * zoomScale, height: height * zoomScale }}
+              resizeMode="contain"
+            />
+          </ScrollView>
+        </View>
       </Modal>
     </ThemedView>
   );
@@ -589,6 +749,8 @@ const styles = StyleSheet.create({
   imageDrop: { minHeight: 200, borderWidth: 1, borderStyle: 'dashed', borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: Spacing.two, padding: Spacing.four },
   capturePreview: { width: '100%', aspectRatio: 16 / 9, borderRadius: 10, backgroundColor: '#05070A' },
   sendBtn: { alignItems: 'center', borderRadius: 12, paddingHorizontal: Spacing.four, paddingVertical: Spacing.three },
-  zoomOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
-  zoomImage: { width: '100%', height: '100%' },
+  zoomOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.96)' },
+  zoomToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.three, paddingTop: 48, paddingBottom: Spacing.three },
+  zoomBtn: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', borderRadius: 10, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
+  zoomScroll: { flex: 1 },
 });

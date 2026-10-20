@@ -1,23 +1,29 @@
 import { Link } from 'expo-router';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
   Pressable,
   ScrollView,
   StyleSheet,
+  Text,
   TextInput,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AccessBoundary } from '@/components/access-boundary';
+import { ProjectorDropZone } from '@/components/projector-drop-zone';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { usePairing } from '@/hooks/use-pairing';
 import { useTheme } from '@/hooks/use-theme';
 import { useSessionStore } from '@/store/session';
+
+type LocalContent =
+  | { kind: 'image'; dataUrl: string }
+  | { kind: 'code'; text: string };
 
 export default function ProjectorScreen() {
   return (
@@ -32,9 +38,25 @@ function ProjectorWorkspace() {
   const lock = useSessionStore((s) => s.lock);
   const pairing = usePairing('display');
   const [codeInput, setCodeInput] = useState('');
+  const [localContent, setLocalContent] = useState<LocalContent | null>(null);
   const connected = pairing.phase === 'connected';
   const received = pairing.receivedImage;
   const imageSrc = received ? `data:${received.mime};base64,${received.data}` : null;
+  const localImage = localContent?.kind === 'image' ? localContent.dataUrl : null;
+  const localCode = localContent?.kind === 'code' ? localContent.text : null;
+  const displayImage = localImage ?? imageSrc;
+
+  const handleLocalImage = useCallback((dataUrl: string) => {
+    setLocalContent({ kind: 'image', dataUrl });
+  }, []);
+
+  const handleLocalCode = useCallback((text: string) => {
+    setLocalContent({ kind: 'code', text });
+  }, []);
+
+  const clearLocalContent = useCallback(() => {
+    setLocalContent(null);
+  }, []);
 
   const handleJoin = () => {
     const trimmed = codeInput.trim().toUpperCase();
@@ -130,9 +152,13 @@ function ProjectorWorkspace() {
                 </View>
 
                 <View style={[styles.display, { backgroundColor: '#05070A', borderColor: theme.border }]}>
-                  {imageSrc ? (
+                  {localCode ? (
+                    <ScrollView style={styles.codeScroll} contentContainerStyle={styles.codeContent}>
+                      <Text selectable style={styles.codeText}>{localCode}</Text>
+                    </ScrollView>
+                  ) : displayImage ? (
                     <Image
-                      source={{ uri: imageSrc }}
+                      source={{ uri: displayImage }}
                       style={styles.displayImage}
                       resizeMode="contain"
                     />
@@ -142,15 +168,26 @@ function ProjectorWorkspace() {
                         Waiting for content from Admin…
                       </ThemedText>
                       <ThemedText type="small" themeColor="textSecondary">
-                        Admin will push an image once Recorder is live.
+                        Admin will push an image once Recorder is live. You can also drop an image or paste code below.
                       </ThemedText>
                     </>
                   )}
                 </View>
 
+                {localContent ? (
+                  <View style={[styles.localBadge, { borderColor: theme.accent, backgroundColor: theme.backgroundElement }]}>
+                    <ThemedText type="smallBold" style={{ color: theme.accent }}>
+                      Showing local {localContent.kind === 'image' ? 'image' : 'code'}
+                    </ThemedText>
+                    <Pressable accessibilityRole="button" onPress={clearLocalContent}>
+                      <ThemedText type="smallBold" style={{ color: theme.accent }}>Show Admin content</ThemedText>
+                    </Pressable>
+                  </View>
+                ) : null}
+
                 <Pressable
                   accessibilityRole="button"
-                  onPress={() => { pairing.reset(); setCodeInput(''); }}
+                  onPress={() => { pairing.reset(); setCodeInput(''); setLocalContent(null); }}
                   style={({ pressed }) => [
                     styles.secondaryBtn,
                     { borderColor: theme.border, backgroundColor: pressed ? theme.backgroundSelected : 'transparent' },
@@ -159,6 +196,24 @@ function ProjectorWorkspace() {
                 </Pressable>
               </>
             )}
+
+            {!connected && localContent ? (
+              <View style={[styles.localPreview, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
+                <ThemedText type="smallBold">Local preview</ThemedText>
+                {localCode ? (
+                  <ScrollView style={styles.localCodeScroll} contentContainerStyle={styles.codeContent}>
+                    <Text selectable style={styles.codeText}>{localCode}</Text>
+                  </ScrollView>
+                ) : (
+                  <Image source={{ uri: localImage ?? '' }} style={styles.localPreviewImage} resizeMode="contain" />
+                )}
+                <Pressable accessibilityRole="button" onPress={clearLocalContent}>
+                  <ThemedText type="smallBold" style={{ color: theme.accent }}>Clear local content</ThemedText>
+                </Pressable>
+              </View>
+            ) : null}
+
+            <ProjectorDropZone onImage={handleLocalImage} onCode={handleLocalCode} />
           </View>
 
         </ScrollView>
@@ -204,6 +259,8 @@ const styles = StyleSheet.create({
   connectedBadge: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, borderWidth: 1, borderRadius: 12, padding: Spacing.three },
   dot: { width: 8, height: 8, borderRadius: 4 },
   display: {
+    width: '100%',
+    aspectRatio: 16 / 9,
     minHeight: 300,
     borderWidth: 1,
     borderRadius: 16,
@@ -211,7 +268,24 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: Spacing.two,
     padding: Spacing.four,
+    overflow: 'hidden',
   },
   displayPlaceholder: { fontSize: 18, textAlign: 'center' },
   displayImage: { width: '100%', height: '100%', borderRadius: 14 },
+  codeScroll: { width: '100%', flex: 1, backgroundColor: '#05070A', borderRadius: 12 },
+  codeContent: { padding: Spacing.three },
+  codeText: { fontFamily: 'monospace', fontSize: 15, lineHeight: 22, color: '#E8EAED' },
+  localBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: Spacing.three,
+  },
+  localPreview: { borderWidth: 1, borderRadius: 12, padding: Spacing.three, gap: Spacing.two },
+  localCodeScroll: { maxHeight: 220, backgroundColor: '#05070A', borderRadius: 10 },
+  localPreviewImage: { width: '100%', height: 220, borderRadius: 10, backgroundColor: '#05070A' },
 });

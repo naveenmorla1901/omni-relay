@@ -4,6 +4,8 @@
  * detectQuad / warpPerspective operate on ImageData and are side-effect-free.
  */
 
+import { CONFIG } from '@/config';
+
 export type Point = [number, number];
 export type QuadCorners = [Point, Point, Point, Point]; // [TL, TR, BR, BL]
 
@@ -33,12 +35,16 @@ export function detectQuad(imageData: ImageData): QuadCorners | null {
 
   const blurred = blur5x5(gray, w, h);
   const edges = sobelMagnitude(blurred, w, h);
-  const thresh = otsuThreshold(edges);
-  const corners = findExtremeCorners(edges, w, h, thresh * 0.45);
+  const otsu = otsuThreshold(edges);
+  // Otsu can return zero for a flat/noisy frame. Never treat every pixel as an
+  // edge: that was the source of false full-frame quads and missing overlays.
+  const thresh = Math.max(18, Math.round(otsu * 0.55));
+  const corners = findExtremeCorners(edges, w, h, thresh);
   if (!corners) return null;
 
   if (!isValidQuad(corners, w, h)) return null;
   if (quadArea(corners) < w * h * 0.12) return null;
+  if (quadEdgeSupport(edges, w, h, corners, thresh) < 0.42) return null;
 
   return corners.map(([x, y]) => [
     Math.min(Math.round(x / scale), origW - 1),
@@ -50,6 +56,31 @@ export function detectQuad(imageData: ImageData): QuadCorners | null {
  * Warp imageData so the quad fills a flat rectangle.
  * Output dimensions are derived from the quad edge lengths.
  */
+/**
+ * Smooth small frame-to-frame corner movement while allowing a large move to
+ * re-lock immediately. Coordinates are expected to share the same image size.
+ */
+export function smoothQuad(
+  previous: QuadCorners | null,
+  next: QuadCorners,
+  width: number,
+  height: number,
+  alpha: number,
+  movementThreshold: number,
+): QuadCorners {
+  if (!previous) return next;
+  const diagonal = Math.hypot(width, height);
+  const movement = Math.max(
+    ...next.map(([x, y], i) => dist([x, y], previous[i]))
+  ) / diagonal;
+  if (movement > movementThreshold) return next;
+  const clampedAlpha = Math.max(0, Math.min(1, alpha));
+  return next.map(([x, y], i) => [
+    Math.round(previous[i][0] + (x - previous[i][0]) * clampedAlpha),
+    Math.round(previous[i][1] + (y - previous[i][1]) * clampedAlpha),
+  ]) as QuadCorners;
+}
+
 export function warpPerspective(src: ImageData, corners: QuadCorners): ImageData {
   const [tl, tr, br, bl] = corners;
 
@@ -251,27 +282,109 @@ function findExtremeCorners(
   thresh: number,
 ): QuadCorners | null {
   const cx = w / 2, cy = h / 2;
-  let tlS = -Infinity, trS = -Infinity, brS = -Infinity, blS = -Infinity;
-  let tl: Point = [cx | 0, cy | 0], tr: Point = [cx | 0, cy | 0];
-  let br: Point = [cx | 0, cy | 0], bl: Point = [cx | 0, cy | 0];
+  const candidates: Point[][] = [[], [], [], []];
   let hits = 0;
-
-  const mx = Math.round(w * 0.04);
-  const my = Math.round(h * 0.04);
+  const mx = Math.round(w * 0.02);
+  const my = Math.round(h * 0.02);
+  const minSpacing = Math.max(3, Math.round(Math.min(w, h) * 0.012));
 
   for (let y = my; y < h - my; y++) {
     for (let x = mx; x < w - mx; x++) {
       if (edges[y * w + x] < thresh) continue;
       hits++;
-      const dx = x - cx, dy = y - cy;
-      if (-dx - dy > tlS) { tlS = -dx - dy; tl = [x, y]; }
-      if ( dx - dy > trS) { trS =  dx - dy; tr = [x, y]; }
-      if ( dx + dy > brS) { brS =  dx + dy; br = [x, y]; }
-      if (-dx + dy > blS) { blS = -dx + dy; bl = [x, y]; }
+      const quadrant = x <= cx ? (y <= cy ? 0 : 3) : (y <= cy ? 1 : 2);
+      const list = candidates[quadrant];
+      // Keep spatially distinct high-quality candidates. This lets edge
+      // support choose a real corner instead of a piece of printed text.
+      const dx = x - cx;
+      const dy = y - cy;
+      const score = quadrant === 0 ? -dx - dy
+        : quadrant === 1 ? dx - dy
+          : quadrant === 2 ? dx + dy : -dx + dy;
+      const point = [x, y] as Point;
+      // Keep the highest-scoring spatially distinct points. The previous
+      // implementation removed existing points near the new one, which
+      // deleted real corners as the scan moved along an edge.
+      if (list.some((candidate) => dist(candidate, point) < minSpacing)) continue;
+      const insertAt = list.findIndex((candidate) => {
+        const cdx = candidate[0] - cx;
+        const cdy = candidate[1] - cy;
+        const candidateScore = quadrant === 0 ? -cdx - cdy
+          : quadrant === 1 ? cdx - cdy
+            : quadrant === 2 ? cdx + cdy : -cdx + cdy;
+        return score > candidateScore;
+      });
+      if (insertAt >= 0) list.splice(insertAt, 0, point);
+      else list.push(point);
+      if (list.length > CONFIG.QUAD_MAX_CANDIDATES) list.length = CONFIG.QUAD_MAX_CANDIDATES;
     }
   }
 
-  return hits > 20 ? [tl, tr, br, bl] : null;
+  if (hits < 30 || candidates.some((list) => list.length === 0)) return null;
+
+  let best: QuadCorners | null = null;
+  let bestScore = -Infinity;
+  const startedAt = Date.now();
+  let attempts = 0;
+  outer: for (const tl of candidates[0]) {
+    for (const tr of candidates[1]) {
+      for (const br of candidates[2]) {
+        for (const bl of candidates[3]) {
+          // Keep the main thread responsive on low-end phones. If the budget
+          // runs out, return the best quad found so far instead of freezing.
+          if ((++attempts & 0x3ff) === 0 && Date.now() - startedAt > CONFIG.QUAD_DETECTION_BUDGET_MS) {
+            break outer;
+          }
+          const quad: QuadCorners = [tl, tr, br, bl];
+          if (!isValidQuad(quad, w, h) || quadArea(quad) < w * h * 0.12) continue;
+          const support = quadEdgeSupport(edges, w, h, quad, thresh);
+          const score = support * 4 + quadArea(quad) / (w * h);
+          if (score > bestScore) {
+            best = quad;
+            bestScore = score;
+          }
+        }
+      }
+    }
+  }
+  return best;
+}
+
+/** Fraction of samples near an edge that contain a strong gradient. */
+function quadEdgeSupport(
+  edges: Uint8Array,
+  w: number,
+  h: number,
+  corners: QuadCorners,
+  thresh: number,
+): number {
+  const radius = Math.max(2, Math.round(Math.min(w, h) * 0.012));
+  let supported = 0;
+  let total = 0;
+  for (let side = 0; side < 4; side++) {
+    const [x1, y1] = corners[side];
+    const [x2, y2] = corners[(side + 1) % 4];
+    const length = Math.max(8, Math.round(dist(corners[side], corners[(side + 1) % 4]) / 12));
+    const nx = -(y2 - y1) / Math.max(1, dist([x1, y1], [x2, y2]));
+    const ny = (x2 - x1) / Math.max(1, dist([x1, y1], [x2, y2]));
+    for (let i = 1; i < length; i++) {
+      const t = i / length;
+      const x = x1 + (x2 - x1) * t;
+      const y = y1 + (y2 - y1) * t;
+      let hit = false;
+      for (let r = -radius; r <= radius; r++) {
+        const px = Math.round(x + nx * r);
+        const py = Math.round(y + ny * r);
+        if (px >= 0 && px < w && py >= 0 && py < h && edges[py * w + px] >= thresh) {
+          hit = true;
+          break;
+        }
+      }
+      if (hit) supported++;
+      total++;
+    }
+  }
+  return total ? supported / total : 0;
 }
 
 function isValidQuad(corners: QuadCorners, w: number, h: number): boolean {

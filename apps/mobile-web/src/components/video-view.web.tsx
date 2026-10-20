@@ -6,11 +6,13 @@ import { ThemedText } from '@/components/themed-text';
 type VideoViewProps = {
   stream: MediaStream | null;
   placeholder?: string;
+  /** Keep remote preview orientation in sync with the Recorder when requested. */
+  mirror?: boolean;
   /** Called with the underlying <video> element (or null on unmount). Lets callers capture frames. */
   onVideoElement?: (el: HTMLVideoElement | null) => void;
 };
 
-export function VideoView({ stream, placeholder = 'No video yet', onVideoElement }: VideoViewProps) {
+export function VideoView({ stream, placeholder = 'No video yet', mirror = false, onVideoElement }: VideoViewProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
   const setRef = (el: HTMLVideoElement | null) => {
@@ -56,6 +58,7 @@ export function VideoView({ stream, placeholder = 'No video yet', onVideoElement
             height: '100%',
             objectFit: 'contain',
             backgroundColor: '#05070A',
+            transform: mirror ? 'scaleX(-1)' : undefined,
           }}
         />
       ) : (

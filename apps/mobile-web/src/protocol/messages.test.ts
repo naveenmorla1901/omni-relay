@@ -18,6 +18,34 @@ describe('parseMessage', () => {
     expect(parseMessage(serializeMessage(message))).toEqual(message);
   });
 
+  it('round-trips a camera state message', () => {
+    const message = {
+      v: PROTOCOL_VERSION,
+      t: 'camera' as const,
+      facingMode: 'user' as const,
+      mirrored: true,
+    };
+
+    expect(parseMessage(serializeMessage(message))).toEqual(message);
+  });
+
+  it('round-trips a redetect request', () => {
+    const message = {
+      v: PROTOCOL_VERSION,
+      t: 'redetect' as const,
+    };
+
+    expect(parseMessage(serializeMessage(message))).toEqual(message);
+  });
+
+  it('rejects a camera message with an invalid facing mode', () => {
+    expect(
+      parseMessage(
+        JSON.stringify({ v: PROTOCOL_VERSION, t: 'camera', facingMode: 'sideways', mirrored: false }),
+      ),
+    ).toBeNull();
+  });
+
   it('accepts a complete image-begin push', () => {
     const message: DisplayPush = {
       v: PROTOCOL_VERSION,
