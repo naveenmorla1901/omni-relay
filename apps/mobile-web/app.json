@@ -42,7 +42,6 @@
     },
     "plugins": [
       "expo-router",
-      "react-native-webrtc",
       [
         "expo-splash-screen",
         {
