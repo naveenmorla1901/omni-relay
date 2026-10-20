@@ -39,7 +39,8 @@ The single app lives in `apps/mobile-web/src/`:
 | `app/` | expo-router file-based routes: index, recorder, admin, projector, pair |
 | `connection/` | WebRTC abstraction — `IConnection`, `connection.web.ts` (browser), `connection.ts` (native), `signal-ws.ts` (WS signaling + push client) |
 | `camera/` | Camera abstraction — `ICameraSource`, `camera.web.ts` (getUserMedia), `camera.ts` (native react-native-webrtc), `lenses.ts` (physical rear-lens classification) |
-| `lib/cv.ts` | Web-only capture enhancement: contrast → unsharp mask → auto-levels → JPEG; `rotateImage()` |
+| `lib/cv.ts` | Web-only capture: sharpest-of-3 → contrast/brightness → auto-levels → CLAHE → luma-only unsharp → JPEG; `rotateImage()` |
+| `lib/image-quality.ts` | Pure pixel helpers: Laplacian sharpness score, auto-levels, CLAHE, luma-only unsharp (Vitest-tested) |
 | `lib/quad.ts` | Web quad detection + perspective warp — `detectQuad`/`warpPerspective` on `ImageData`; overlay helpers use canvas |
 | `protocol/` | Wire protocol — `messages.ts` types + parse/serialize, `messages.test.ts` |
 | `store/session.ts` | Zustand session state (unlock, role) |
@@ -60,7 +61,7 @@ The single app lives in `apps/mobile-web/src/`:
 
 ### Admin capture pipeline
 
-Canvas draws the live `<video>` at intrinsic resolution, then `enhanceCapture()` in `lib/cv.ts` (contrast 1.25 + brightness 1.05 → unsharp mask 1.8 → percentile auto-levels → JPEG 97%). `lib/quad.ts` detects the document quad (blue overlay) and "Auto-crop" applies perspective warp. `VideoView` exposes `onVideoElement` to pass the DOM element to the parent. Captures are in-memory: `{ id, ts, dataUrl, width, height }` (max 20).
+`captureAndEnhanceVideo()` in `lib/cv.ts` waits for three live `<video>` frames, scores each on a 480px thumbnail with a Laplacian-variance sharpness metric, keeps the sharpest at intrinsic resolution, then runs contrast/brightness → percentile auto-levels → CLAHE → luma-only unsharp → JPEG 97%. `lib/quad.ts` detects the document quad (blue overlay) and "Auto-crop" applies perspective warp. `VideoView` exposes `onVideoElement` to pass the DOM element to the parent and reports low-resolution streams. Captures are in-memory: `{ id, ts, dataUrl, width, height }` (max 20). Native capture is still effectively web-only because it relies on `HTMLVideoElement`/canvas; native lens selection does work for the Recorder feed.
 
 ### Protocol rules
 
@@ -72,15 +73,19 @@ Canvas draws the live `<video>` at intrinsic resolution, then `enhanceCapture()`
 - `SIGNALING_WS_URL` — defaults to Railway URL; override with `EXPO_PUBLIC_SIGNALING_URL`
 - `TARGET_FPS: 8` — never trade text clarity for smooth motion
 - `DEGRADATION: 'maintain-resolution'` — never drop pixel count
+- `HIGH_BITRATE_BPS: 16_000_000` — encoder ceiling; congestion control can still lower it
+- `CAMERA_TEXT_MIN_PIXELS: 1920 * 1080` — explicit rear lenses below 1080p revert to Auto; low-res streams are flagged
+- `CAPTURE_SAMPLE_COUNT: 3` — capture the sharpest of three live frames
+- `CAPTURE_CLAHE_*`, `CAPTURE_UNSHARP_*`, `CAPTURE_JPEG_QUALITY` — Admin enhancement tunables
 
 ## Current status
 
 **Live at:** `https://naveenmorla1901.github.io/omni-relay/`
 **Signaling server:** `wss://omni-relay-production-d45c.up.railway.app` (Railway, `services/signaling/`, PORT=8081)
-**Latest APK:** v0.1.6 on GitHub Releases (`assembleRelease`, debug-keystore signing)
+**Latest APK:** v0.1.6 on GitHub Releases (`assembleRelease`, debug-keystore signing); v0.1.7 quality build pending
 
-Completed: M0–M5 — scaffold, room-code pairing, live video, Admin capture gallery, Admin→Projector image push, pure-TS quad detection + perspective warp. APK v0.1.6 was built from `01a7a59` and published to GitHub Releases. The 2026-10-20 device-testing backlog is implemented in code: 4K/detail camera tuning, fixed quad candidate NMS + synthetic regression tests, Re-lock redetect, auto-crop with Undo, 1–4× zoom, capture Download, front-camera mirror sync, and web Projector drag/drop + paste image/code. Follow-up work adds Admin per-capture Delete / per-thumbnail Delete / Clear all with confirmation, and a Recorder physical rear-lens picker (Auto 4K preferred, Ultra-wide, Main · high quality, Telephoto, numbered Android cameras; failed switches fall back to Auto). Local checks are green (typecheck, lint, 26 tests, web export); live web bundle verified.
+Completed: M0–M5 — scaffold, room-code pairing, live video, Admin capture gallery, Admin→Projector image push, pure-TS quad detection + perspective warp. APK v0.1.6 was built from `01a7a59` and published to GitHub Releases. The 2026-10-20 device-testing backlog is implemented in code: 4K/detail camera tuning, fixed quad candidate NMS + synthetic regression tests, Re-lock redetect, auto-crop with Undo, 1–4× zoom, capture Download, front-camera mirror sync, and web Projector drag/drop + paste image/code. Follow-up work adds Admin per-capture Delete / per-thumbnail Delete / Clear all with confirmation, and a Recorder physical rear-lens picker (Auto 4K preferred, Ultra-wide, Main · high quality, Telephoto, numbered Android cameras; failed switches fall back to Auto). The v0.1.7 quality pass adds sharpest-of-3 Admin capture, CLAHE, luma-only sharpening, a 16 Mbps ceiling, and a 1080p text floor for explicit lenses. Local checks are green (typecheck, lint, 33 tests, web export); code commit `f890fba`.
 
-Known issues: the deployed Railway relay runs pre-M4 code — Admin→Projector `push` fails in production until `services/signaling` is redeployed. The camera quality/detection/zoom/delete/lens work still needs real-device verification. Some Android builds expose only one logical rear camera, so Ultra-wide is not available there.
+Known issues: the deployed Railway relay runs pre-M4 code — Admin→Projector `push` fails in production until `services/signaling` is redeployed. The camera quality/detection/zoom/delete/lens work still needs real-device verification. Some Android builds expose only one logical rear camera or expose 720p auxiliary cameras; v0.1.7 now rejects the latter and restores Auto. Native `react-native-webrtc` ignores focus/exposure/WB constraints, so manual focus/ISO/shutter requires a Vision Camera/Camera2 path.
 
-Next: browser-test Admin delete/clear, install APK v0.1.6 to compare Auto vs. Ultra-wide vs. Main/high-quality lenses on a close screen, redeploy the relay, then the M5 remainder (CLAHE, raw-frame fallback) or M6 camera tuning.
+Next: install APK v0.1.7, confirm low-resolution lenses snap back to Auto, test the sharper capture output, redeploy the relay, then the M5 remainder (anti-moiré/raw-frame fallback) or the native still-capture path.

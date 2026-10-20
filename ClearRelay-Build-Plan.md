@@ -573,7 +573,7 @@ Grouped by area; each is a self-contained PR-sized unit.
 // src/config/index.ts
 export const CONFIG = {
   TARGET_FPS: 8,                 // clarity mode
-  HIGH_BITRATE_BPS: 8_000_000,   // 8 Mbps; raise for max clarity on strong networks
+  HIGH_BITRATE_BPS: 16_000_000,  // 16 Mbps ceiling; congestion control still adapts
   DEGRADATION: 'maintain-resolution' as const,
   CAPTURE_RESOLUTION: { width: 1920, height: 1080 },
   QUAD_MOVE_THRESHOLD: 0.03,     // fraction of frame; re-warp if quad shifts more
