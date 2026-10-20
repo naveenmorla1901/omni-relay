@@ -4,6 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
+    "buildCommand": "npm install",
     "startCommand": "npx ts-node server.ts",
     "healthcheckPath": "/",
     "healthcheckTimeout": 30,
