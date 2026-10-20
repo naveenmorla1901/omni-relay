@@ -34,6 +34,6 @@ export const CONFIG = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
   ],
-  SIGNALING_WS_URL: process.env.EXPO_PUBLIC_SIGNALING_URL ?? '',
+  SIGNALING_WS_URL: process.env.EXPO_PUBLIC_SIGNALING_URL ?? 'wss://omni-relay-production-b572.up.railway.app',
   OCR_MIN_CONFIDENCE: 0.75,
 } as const;
