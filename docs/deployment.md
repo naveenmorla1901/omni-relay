@@ -1,134 +1,175 @@
 # Deployment & Distribution
 
-ClearRelay has two deliverables:
+ClearRelay has three deliverables:
 
-1. **Web app** for Admin and Projector in a browser.
-2. **Signed Android APK** shared through GitHub Releases.
+1. **Web app** — Admin and Projector (and Recorder as a PWA fallback) served from GitHub Pages.
+2. **Android APK** — Recorder camera app built via GitHub Actions and published to GitHub Releases.
+3. **Signaling server** — minimal WebSocket relay deployed on Railway (room codes only, never media).
 
-There is no cloud backend, database, or media server. Static hosting is only used to serve the web
-bundle; WebRTC media and data stay peer-to-peer.
+There is no cloud backend, database, or media server. WebRTC media stays peer-to-peer; captured images are relayed through the existing WebSocket connection.
 
-## Recommendation
+---
 
-- **Web:** deploy the static Expo export to **GitHub Pages**. It is free, HTTPS, reliable, and has
-  no runtime backend. This is still "serverless" in the sense that no application server or media
-  server is involved.
-- **APK:** build locally or in **GitHub Actions** and attach the signed APK to a GitHub Release.
-  Do not make EAS cloud builds a requirement.
-- **Signaling:** QR pairing needs no server. Add the optional `services/signaling` helper later
-  (M8) only for remote room-code pairing, and self-host it.
+## Signaling server (Railway)
 
-If you want zero third-party hosting at all, serve the same `dist/` folder from a home server with
-Caddy or Nginx. That is reliable on your LAN but requires HTTPS and a reachable address for remote
-use.
+The signaling relay lives in `services/signaling/server.js` — plain Node.js, no build step.
+
+| Setting | Value |
+| --- | --- |
+| Live URL | `wss://omni-relay-production-d45c.up.railway.app` |
+| Platform | Railway |
+| Root directory | `services/signaling` |
+| Start command | `node server.js` |
+| PORT env var | `8081` |
+
+The URL is baked into `apps/mobile-web/src/config/index.ts` as `SIGNALING_WS_URL`. Override at build time with `EXPO_PUBLIC_SIGNALING_URL` if self-hosting.
+
+### What it does
+
+- Admin sends `{ t: 'create' }` → receives a 6-char room code.
+- Recorder/Projector send `{ t: 'join', code, role }` → server notifies Admin.
+- SDP offers/answers are relayed via `{ t: 'sdp', to, sdp, kind }`.
+- Admin pushes captured images to Projector via `{ t: 'push', data, mime }`.
+- Rooms expire after 30 minutes. Confusable characters (0/O, 1/I/L) are excluded from codes.
+
+The server never sees WebRTC media. The push payload is a raw base64 JPEG string forwarded verbatim to the display peer.
+
+### Self-hosting
+
+```bash
+cd services/signaling
+npm install
+PORT=8081 node server.js
+```
+
+Set `EXPO_PUBLIC_SIGNALING_URL=wss://your-host` at web build time, or change `SIGNALING_WS_URL` in `config/index.ts`.
+
+---
+
+## Web app (GitHub Pages)
+
+**Live:** `https://naveenmorla1901.github.io/omni-relay/`
+
+The deploy workflow is `.github/workflows/deploy-pages.yml`. It runs on every push to `main`:
+
+1. Installs dependencies (`npm ci`).
+2. Runs `npx expo export --platform web` with `EXPO_BASE_URL=/omni-relay`.
+3. Uploads `apps/mobile-web/dist` and deploys via GitHub Pages.
+
+### One-time setup
+
+1. Open **Settings → Pages → Build and deployment** and set **Source** to **GitHub Actions**.
+2. Push to `main` or run the workflow manually.
+3. Wait for the green deployment badge, then open the URL above.
+
+The workflow cannot enable Pages with the default `GITHUB_TOKEN`; that first toggle must be done in repository settings. After that, every push to `main` deploys automatically.
+
+No repository secret is needed — the access key is built into the client bundle.
+
+### Local dev server
+
+```bash
+npm run web          # http://localhost:8081 (no base path)
+```
+
+Do not set `EXPO_BASE_URL` locally — it is only for the Pages sub-path.
+
+### iOS personal use (PWA)
+
+No Apple Developer account is needed. On an iPhone:
+
+1. Open `https://naveenmorla1901.github.io/omni-relay/` in **Safari**.
+2. Tap the Share button → **Add to Home Screen**.
+3. Launch from the home screen icon — it runs as a PWA with camera access.
+
+---
+
+## Android APK (GitHub Actions)
+
+**Latest APK:** `https://github.com/naveenmorla1901/omni-relay/releases/latest`
+
+The workflow is `.github/workflows/build-android.yml`.
+
+### Triggers
+
+| Trigger | What it builds |
+| --- | --- |
+| Push a `v*` tag (e.g. `v0.1.0`) | Debug APK → published as a GitHub Release |
+| Manual `workflow_dispatch` | Debug APK → artifact only (no release) |
+
+### How to trigger a release
+
+```bash
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The build takes 10–15 minutes. When it finishes, the APK appears in **Releases** and the **Download APK** button on the home screen links directly to it.
+
+### What the workflow does
+
+1. Checks out the repo and sets up Node 22.
+2. Runs `npm ci` (with `.npmrc` retry hardening).
+3. Accepts Android SDK licenses (`yes | sdkmanager --licenses`).
+4. Runs `npx expo prebuild --platform android --clean --no-install`.
+5. Runs `./gradlew assembleDebug --no-daemon`.
+6. On a `v*` tag: creates a GitHub Release and uploads `app-debug.apk`.
+
+### Installing the APK
+
+1. On the Android device, allow **Install unknown apps** from the browser or Files app.
+2. Download the APK from the Releases page and tap to install.
+3. Open ClearRelay, enter the access key, and choose **Recorder**.
+
+### Signed release APK (future)
+
+The current build is a debug APK — no keystore needed, suitable for personal sideloading. For wider distribution:
+
+1. Generate a release keystore: `keytool -genkey -v -keystore clearrelay.jks ...`
+2. Store it as `ANDROID_KEYSTORE_BASE64` (base64-encoded) in GitHub Actions secrets, along with `KEY_ALIAS`, `KEY_PASSWORD`, and `STORE_PASSWORD`.
+3. Add a signing block to `android/app/build.gradle` and switch the Gradle task to `assembleRelease`.
+
+Do not commit the keystore file. Losing it permanently blocks APK updates under the same application ID (`com.clearrelay.app`).
+
+---
 
 ## Access key
 
-The key is client-side. It is the `ACCESS_KEY` constant in
-`apps/mobile-web/src/config/index.ts`, so it is available in the web bundle and the APK without any
-server or repository secret. Change that string and redeploy to rotate the key.
+The key is the `ACCESS_KEY` constant in `apps/mobile-web/src/config/index.ts`.
 
-Optional extra keys can be added at build time with `EXPO_PUBLIC_ACCESS_KEYS` (comma-separated), but
-the built-in key always works.
-
-> The key is a local front-door, not authentication. It is embedded in the JS bundle and can be
-> extracted from a web build or APK. It keeps casual users out of the role picker; it does not
-> authorize WebRTC peers. A pairing PIN/session secret is tracked in `PROJECT-STATUS.md`.
-
-## GitHub Pages
-
-The workflow is `.github/workflows/deploy-pages.yml`. It builds `apps/mobile-web/dist` with
-`EXPO_BASE_URL=/omni-relay`, uploads it, and deploys it with GitHub Pages.
-
-One-time setup on GitHub:
-
-1. Open Settings → Pages → Build and deployment, and set **Source** to **GitHub Actions**.
-2. Push to `main`, or run the **Deploy web** workflow manually.
-3. Wait for the green deployment, then open `https://<user>.github.io/<repo>/`.
-
-The workflow cannot enable Pages with the default `GITHUB_TOKEN`; the first toggle must be done in
-repository settings. After that, the preflight check will pass and deployments are automatic.
-
-No repository secret is required; the access key is built into the client. The workflow passes the
-project-site base path through `EXPO_BASE_URL`; local `npm run web` remains at the root because
-`app.config.js` only adds `baseUrl` when that variable is set.
-
-### Private repositories
-
-This repository is public. If you make it private later, GitHub Pages supports private repositories
-only on plans that include it (for example GitHub Pro, Team, or Enterprise). On GitHub Free, a
-private repository cannot publish Pages. Options:
-
-- Keep the repository public. The app code and build plan are not secrets, and the access key is
-  bundled into the client anyway.
-- Upgrade the account to a plan that includes private Pages.
-- Use Cloudflare Pages (free) connected to the private GitHub repo; it supports private repositories
-  and can deploy the same `dist/` output.
-
-> A Pages site is public on the internet. The access-key gate is client-side; anyone who has the URL
-> can load the app shell and attempt keys.
-
-HTTPS is required for browser camera access. Both Recorder and Admin work in the browser today; the
-native camera source is an APK-phase optimization behind the same `ICameraSource` interface.
-
-## Using the live feed (current web build)
-
-1. Open the deployed URL on both devices and enter the access key.
-2. On the Recorder phone: **Recorder → Create invite**. Show or copy the invite code.
-3. On Admin: **Scan Recorder invite** (or paste the invite code) and **Create answer**.
-4. On the Recorder: **Scan QR** or paste the answer code, then **Connect**.
-5. The rear camera starts and Admin renders the live feed. Use **Copy code** at any step if QR
-   scanning fails.
-
-Pairing codes are gzip + base64url (`CR1.` prefix) and currently fit in a single QR code; a chunked
-QR fallback is tracked in `PROJECT-STATUS.md` if the payload grows. Keep both browser tabs awake:
-locking the phone screen pauses the camera track.
-
-## Android APK
-
-The app identity is already set to `com.clearrelay.app` and the scheme is `clearrelay`.
-
-Local release build outline:
-
-```bash
-npx expo prebuild --platform android
-cd android
-./gradlew assembleRelease
+```typescript
+export const ACCESS_KEY = 'Thiswillbekey1901';
 ```
 
-On Windows use `.\gradlew.bat assembleRelease`. The APK is under
-`android/app/build/outputs/apk/release/`. A shareable build needs a release keystore; configure the
-signing block in `android/app/build.gradle` or use Expo's Android signing guide. Do not distribute a
-debug-signed APK as the final artifact.
+- Change this string and redeploy (web export + APK rebuild) to rotate the key.
+- Optional extra keys at build time: `EXPO_PUBLIC_ACCESS_KEYS=key1,key2`.
+- The built-in key always works regardless of the env var.
 
-GitHub Actions outline:
+> **Limitation:** the key is embedded in the public JS bundle and APK. Anyone with access to those files can extract it. It is a convenience gate, not authentication. Do not base real access control on it.
 
-1. `actions/checkout` + Node `22.13+` + `npm ci`.
-2. Set `EXPO_PUBLIC_ACCESS_KEYS` from a repository secret or environment variable.
-3. `npx expo prebuild --platform android`.
-4. Decode the release keystore from `ANDROID_KEYSTORE_BASE64` and configure signing.
-5. `./gradlew assembleRelease`.
-6. Upload the APK as a GitHub Release asset (`softprops/action-gh-release` or `gh release upload`).
+---
 
-Keep the keystore and passwords in GitHub Actions secrets. Losing the keystore prevents updates to
-an installed APK under the same application ID.
+## CI pipeline
 
-## Home-server option
+The CI workflow is `.github/workflows/ci.yml`. It runs on every push and pull request to `main`:
 
-- Serve `apps/mobile-web/dist` with Caddy (automatic TLS) or Nginx.
-- Keep the optional signaling helper in Docker; only signaling traffic goes through it, never media.
-- For remote pairing without a public IP, Tailscale Funnel or a Cloudflare Tunnel can expose the
-  signaling helper over HTTPS. That is a third-party signaling relay, not a media relay; confirm
-  that tradeoff before using it.
-- TURN (`infra/coturn`) is only needed when both peers are behind hard NAT. It relays media, so it
-  breaks the pure P2P guarantee and is optional.
+1. `npm run typecheck` — strict TypeScript
+2. `npm run lint` — ESLint
+3. `npm test` — Vitest unit tests (14 tests)
+4. `npm run export:web` — static web export (catches native imports leaking into the web bundle)
+
+All four must pass before merging.
+
+---
 
 ## Release checklist
 
-- [ ] Change `ACCESS_KEY` in `src/config/index.ts` if rotating the key, then redeploy
-- [ ] Bump app version / Android versionCode
-- [ ] Build and sign the release APK
-- [ ] Install the APK on a physical device and run the clarity test
-- [ ] Verify Admin and Projector in a browser over HTTPS
-- [ ] Publish the APK to GitHub Releases
-- [ ] Share the install link and access key only with intended users
+- [ ] Bump `ACCESS_KEY` in `config/index.ts` if rotating (then redeploy web + rebuild APK)
+- [ ] Bump version in `apps/mobile-web/package.json` and `app.json` (`versionCode` for Android)
+- [ ] All CI checks green on `main`
+- [ ] Push a `v*` tag and wait for the APK build to complete
+- [ ] Install the APK on a physical Android device
+- [ ] Run a three-device session: Admin (browser) + Recorder (APK) + Projector (browser)
+- [ ] Verify captured image pushes to Projector full-screen
+- [ ] Confirm ~11px source code remains readable after Admin capture (clarity acceptance test)
+- [ ] Publish/share the install link and access key only with intended users
