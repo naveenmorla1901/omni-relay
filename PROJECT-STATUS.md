@@ -6,9 +6,9 @@
 > unless a decision is recorded below.
 
 **Last updated:** 2026-10-20
-**Current milestone:** M1–M4 complete (web + Android APK). M5 CV pipeline partially done (unsharp mask + auto-levels). Android APK v0.1.4 runs on device — Recorder shows live camera preview, Admin captures + rotates + zooms + pushes to Projector.
-**Current stop point:** Three-device session works end-to-end on real hardware (Admin browser + Recorder APK + Projector browser). APK launches directly to access key screen, camera preview shows on phone, Admin shows live feed, captures enhanced images, can rotate/zoom them, and pushes to Projector full-screen. OpenCV.js quad detection + perspective warp (M5 remainder) is next.
-**Next action:** M5 — OpenCV.js web worker for document/screen quad detection and perspective warp on captured frames.
+**Current milestone:** M1–M4 complete (web + Android APK). M5 CV pipeline complete (unsharp mask + auto-levels + quad detection + perspective warp). Android APK v0.1.4 runs on device.
+**Current stop point:** Three-device session works end-to-end. After each capture, Admin auto-detects the document/screen quad (blue overlay shown), "Auto-crop" button warps perspective to a flat rectangle. Pure-TS implementation (no OpenCV.js needed) — grayscale → blur → Sobel → Otsu → diagonal corner projection → DLT homography → bilinear warp.
+**Next action:** Test auto-crop on device; optionally add CLAHE adaptive contrast (M5 remainder) or move to M6 camera tuning.
 
 ## How to update this file
 
@@ -90,8 +90,8 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] `src/lib/cv.ts` — unsharp mask (amount 1.8) + percentile auto-levels (0.5% clip) + JPEG 97%
 - [x] `rotateImage()` — canvas-based 90/180/270/-90° JPEG rotation
 - [x] `contentHint='detail'` on camera track
-- [ ] Quad/document edge detection (OpenCV.js web worker)
-- [ ] Perspective warp to rectangle
+- [x] Quad/document edge detection (pure-TS: Sobel + Otsu + diagonal projection; no OpenCV.js needed)
+- [x] Perspective warp to rectangle (DLT homography + bilinear inverse-map)
 - [ ] CLAHE adaptive contrast
 - [ ] EMA quad smoothing, movement threshold, re-detect
 - [ ] Raw-frame fallback when no quad found
@@ -205,3 +205,4 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **2026-10-19** — M4 + CV pipeline: Send to Projector live via WS relay push. CV: unsharp mask + auto-levels. `contentHint='detail'` on camera.
 - **2026-10-20** — Android APK fixes: CI permissions (`contents: write`), `setup-java@v5`, removed `expo-dev-client` (dev launcher), removed unused native packages (`react-native-worklets` etc. causing silent startup crash), switched `assembleDebug` → `assembleRelease` + debug-keystore signing (debug builds don't embed JS bundle). APK v0.1.4 runs on device.
 - **2026-10-20** — Native camera preview, admin redesign: `video-view.tsx` now renders `RTCView` for local stream on Android. Admin left pane wider (flex:2), capture stays in left pane (not auto-sent to right), rotate CCW/CW buttons, zoom modal. Camera tries 4K first. `rotateImage()` added to cv.ts.
+- **2026-10-20** — M5 quad detection + perspective warp: `src/lib/quad.ts` — pure-TS, no OpenCV.js. Pipeline: grayscale → blur5x5 → Sobel → Otsu → diagonal corner projection → convexity validation → DLT homography → bilinear warp. Admin shows blue quad overlay after capture; "Auto-crop" button warps to flat rectangle.
