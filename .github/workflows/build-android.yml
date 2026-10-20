@@ -46,23 +46,32 @@ jobs:
         working-directory: apps/mobile-web/android
         run: chmod +x gradlew
 
-      - name: Build debug APK
+      # Release builds always bundle JS into the APK.
+      # Debug builds connect to Metro at localhost:8081 — useless on a real device.
+      # We sign the release build with the debug keystore so no separate keystore is needed.
+      - name: Use debug keystore for release signing
         working-directory: apps/mobile-web/android
-        run: ./gradlew assembleDebug --no-daemon
+        run: |
+          echo '' >> app/build.gradle
+          echo 'android { buildTypes { release { signingConfig signingConfigs.debug } } }' >> app/build.gradle
+
+      - name: Build release APK
+        working-directory: apps/mobile-web/android
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Determine version label
         id: ver
         run: |
-          if [[ "${{ github.ref_name }}" == "main" || "${{ github.ref_name }}" == "" ]]; then
-            echo "label=dev-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
-          else
+          if [[ "${{ github.ref_name }}" == v* ]]; then
             echo "label=${{ github.ref_name }}" >> $GITHUB_OUTPUT
+          else
+            echo "label=dev-$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
           fi
 
       - name: Collect APK
         run: |
           mkdir -p dist
-          cp apps/mobile-web/android/app/build/outputs/apk/debug/app-debug.apk \
+          cp apps/mobile-web/android/app/build/outputs/apk/release/app-release.apk \
              dist/ClearRelay-${{ steps.ver.outputs.label }}.apk
 
       - name: Upload APK artifact
