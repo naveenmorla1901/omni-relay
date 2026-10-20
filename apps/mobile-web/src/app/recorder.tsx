@@ -11,7 +11,8 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { createCameraSource } from '@/camera';
-import type { ICameraSource } from '@/camera';
+import type { CameraDevice, ICameraSource } from '@/camera';
+import { buildLensOptions } from '@/camera/lenses';
 import { AccessBoundary } from '@/components/access-boundary';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -38,12 +39,35 @@ function RecorderWorkspace() {
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [cameraBusy, setCameraBusy] = useState(false);
-  const [cameraSettings, setCameraSettings] = useState<{ width: number; height: number; fps: number; facingMode?: string } | null>(null);
+  const [cameraSettings, setCameraSettings] = useState<{ width: number; height: number; fps: number; facingMode?: string; deviceId?: string } | null>(null);
+  const [availableCameras, setAvailableCameras] = useState<CameraDevice[]>([]);
+  const [selectedDeviceId, setSelectedDeviceId] = useState('');
   const [relockBusy, setRelockBusy] = useState(false);
   const cameraRef = useRef<ICameraSource | null>(null);
   const autoStartedRef = useRef(false);
 
   // ── Camera controls ────────────────────────────────────────────────────────
+
+  const attachCameraStream = useCallback((camera: ICameraSource) => {
+    const stream = camera.getStream();
+    if (!stream) throw new Error('Camera did not return a stream.');
+    setLocalStream(stream);
+    const settings = camera.getActualSettings();
+    setCameraSettings(settings);
+    const track = stream.getVideoTracks()[0];
+    if (track) pairing.attachVideoTrack(track);
+    pairing.updateCameraFacingMode(settings?.facingMode, settings?.facingMode === 'user');
+    return settings;
+  }, [pairing]);
+
+  const refreshCameras = useCallback(async (camera: ICameraSource) => {
+    try {
+      const devices = await camera.listDevices();
+      if (devices.length > 0) setAvailableCameras(devices);
+    } catch {
+      // Lens labels are optional; Auto still works without the list.
+    }
+  }, []);
 
   const startCamera = useCallback(async () => {
     if (cameraBusy) return;
@@ -54,19 +78,15 @@ function RecorderWorkspace() {
       const camera = cameraRef.current;
       const permitted = await camera.requestPermission();
       if (!permitted) throw new Error('Camera not available. Open over HTTPS and allow access.');
+      camera.setFacingMode('environment');
       await camera.start('', {
         width: CONFIG.CAPTURE_RESOLUTION.width,
         height: CONFIG.CAPTURE_RESOLUTION.height,
         fps: CONFIG.TARGET_FPS,
       });
-      const stream = camera.getStream();
-      if (!stream) throw new Error('Camera did not return a stream.');
-      setLocalStream(stream);
-      const settings = camera.getActualSettings();
-      setCameraSettings(settings);
-      const track = stream.getVideoTracks()[0];
-      if (track) pairing.attachVideoTrack(track);
-      pairing.updateCameraFacingMode(settings?.facingMode, settings?.facingMode === 'user');
+      attachCameraStream(camera);
+      setSelectedDeviceId('');
+      await refreshCameras(camera);
       // Let auto exposure/focus/white-balance converge before locking.
       await camera.autoAdjustForDocument();
       await new Promise((r) => setTimeout(r, CONFIG.CAMERA_AUTO_SETTLE_MS));
@@ -76,12 +96,67 @@ function RecorderWorkspace() {
     } finally {
       setCameraBusy(false);
     }
-  }, [cameraBusy, pairing]);
+  }, [attachCameraStream, cameraBusy, refreshCameras]);
+
+  const selectLens = useCallback(async (device: CameraDevice | null) => {
+    const camera = cameraRef.current;
+    if (!camera || cameraBusy) return;
+
+    const nextDeviceId = device?.id ?? '';
+    if (
+      nextDeviceId
+        ? cameraSettings?.deviceId === nextDeviceId || selectedDeviceId === nextDeviceId
+        : selectedDeviceId === '' && cameraSettings?.facingMode === 'environment'
+    ) {
+      return;
+    }
+
+    setCameraBusy(true);
+    setCameraError(null);
+    try {
+      camera.setFacingMode('environment');
+      await camera.start(nextDeviceId, {
+        width: CONFIG.CAPTURE_RESOLUTION.width,
+        height: CONFIG.CAPTURE_RESOLUTION.height,
+        fps: CONFIG.TARGET_FPS,
+      });
+      attachCameraStream(camera);
+      setSelectedDeviceId(nextDeviceId);
+      await refreshCameras(camera);
+      await camera.autoAdjustForDocument();
+      await new Promise((r) => setTimeout(r, CONFIG.CAMERA_AUTO_SETTLE_MS));
+      await camera.lockExposureFocusWhiteBalance();
+    } catch (err) {
+      const selectedError = cameraErrMsg(err);
+      // A physical lens can reject 4K or be unavailable. Restore the default
+      // rear camera instead of leaving the Recorder with no stream.
+      try {
+        camera.setFacingMode('environment');
+        await camera.start('', {
+          width: CONFIG.CAPTURE_RESOLUTION.width,
+          height: CONFIG.CAPTURE_RESOLUTION.height,
+          fps: CONFIG.TARGET_FPS,
+        });
+        attachCameraStream(camera);
+        setSelectedDeviceId('');
+        await refreshCameras(camera);
+        setCameraError(`${selectedError} Switched back to Auto.`);
+      } catch (fallbackErr) {
+        setCameraError(cameraErrMsg(fallbackErr));
+        setLocalStream(null);
+        setCameraSettings(null);
+      }
+    } finally {
+      setCameraBusy(false);
+    }
+  }, [attachCameraStream, cameraBusy, cameraSettings?.deviceId, cameraSettings?.facingMode, refreshCameras, selectedDeviceId]);
 
   const stopCamera = useCallback(() => {
     cameraRef.current?.stop();
     setLocalStream(null);
     setCameraSettings(null);
+    setSelectedDeviceId('');
+    setAvailableCameras([]);
   }, []);
 
   const relockCamera = useCallback(async () => {
@@ -105,21 +180,18 @@ function RecorderWorkspace() {
     setCameraError(null);
     try {
       await cam.flipCamera();
-      const stream = cam.getStream();
-      if (stream) {
-        setLocalStream(stream);
-        const settings = cam.getActualSettings();
-        setCameraSettings(settings);
-        const track = stream.getVideoTracks()[0];
-        if (track) pairing.attachVideoTrack(track);
-        pairing.updateCameraFacingMode(settings?.facingMode, settings?.facingMode === 'user');
-      }
+      attachCameraStream(cam);
+      setSelectedDeviceId('');
+      await refreshCameras(cam);
+      await cam.autoAdjustForDocument();
+      await new Promise((r) => setTimeout(r, CONFIG.CAMERA_AUTO_SETTLE_MS));
+      await cam.lockExposureFocusWhiteBalance();
     } catch (err) {
       setCameraError(cameraErrMsg(err));
     } finally {
       setCameraBusy(false);
     }
-  }, [cameraBusy, pairing]);
+  }, [attachCameraStream, cameraBusy, refreshCameras]);
 
   useEffect(() => () => { cameraRef.current?.stop(); }, []);
 
@@ -135,11 +207,22 @@ function RecorderWorkspace() {
     if (pairing.phase === 'failed') {
       autoStartedRef.current = false;
       cameraRef.current?.stop();
-      setTimeout(() => setLocalStream(null), 0);
+      setTimeout(() => {
+        setLocalStream(null);
+        setCameraSettings(null);
+        setSelectedDeviceId('');
+      }, 0);
     }
   }, [pairing.phase]);
 
   const connected = pairing.phase === 'connected';
+  const lensOptions = buildLensOptions(availableCameras);
+  const selectedLensOption = lensOptions.find((option) => option.device.id === selectedDeviceId);
+  const actualLensOption = lensOptions.find((option) => option.device.id === cameraSettings?.deviceId);
+  const autoLensActive = selectedDeviceId === '' && cameraSettings?.facingMode !== 'user';
+  const currentLensLabel = cameraSettings?.facingMode === 'user'
+    ? 'Front camera'
+    : selectedLensOption?.label ?? (actualLensOption ? `Auto · ${actualLensOption.label}` : 'Auto · best rear');
 
   // ── Enter code ─────────────────────────────────────────────────────────────
 
@@ -244,9 +327,66 @@ function RecorderWorkspace() {
 
                 {cameraSettings && (
                   <ThemedText type="code" themeColor="textSecondary" style={{ fontSize: 12 }}>
-                    {cameraSettings.width}×{cameraSettings.height} · {cameraSettings.fps} fps
-                    {cameraSettings.facingMode ? ` · ${cameraSettings.facingMode}` : ''}
+                    {cameraSettings.width}×{cameraSettings.height} · {cameraSettings.fps} fps · {currentLensLabel}
                   </ThemedText>
+                )}
+
+                {localStream && (
+                  <View style={[styles.lensBox, { borderColor: theme.border, backgroundColor: theme.background }]}>
+                    <View style={styles.lensHeader}>
+                      <ThemedText type="smallBold">Camera lens</ThemedText>
+                      <ThemedText type="small" themeColor="textSecondary">
+                        {cameraBusy ? 'Switching…' : currentLensLabel}
+                      </ThemedText>
+                    </View>
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.lensRow}>
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel="Use the default best-quality rear camera"
+                        disabled={cameraBusy}
+                        onPress={() => void selectLens(null)}
+                        style={({ pressed }) => [
+                          styles.lensChip,
+                          {
+                            borderColor: autoLensActive ? theme.accent : theme.border,
+                            backgroundColor: autoLensActive ? theme.backgroundSelected : 'transparent',
+                            opacity: cameraBusy ? 0.5 : pressed ? 0.8 : 1,
+                          },
+                        ]}>
+                        <ThemedText type="smallBold" style={{ color: autoLensActive ? theme.accent : theme.text }}>
+                          Auto · 4K preferred
+                        </ThemedText>
+                      </Pressable>
+                      {lensOptions.map((option) => {
+                        const active = selectedDeviceId === option.device.id;
+                        return (
+                          <Pressable
+                            key={option.device.id}
+                            accessibilityRole="button"
+                            accessibilityLabel={`Use the ${option.label} lens`}
+                            disabled={cameraBusy}
+                            onPress={() => void selectLens(option.device)}
+                            style={({ pressed }) => [
+                              styles.lensChip,
+                              {
+                                borderColor: active ? theme.accent : theme.border,
+                                backgroundColor: active ? theme.backgroundSelected : 'transparent',
+                                opacity: cameraBusy ? 0.5 : pressed ? 0.8 : 1,
+                              },
+                            ]}>
+                            <ThemedText type="smallBold" style={{ color: active ? theme.accent : theme.text }}>
+                              {option.label}
+                            </ThemedText>
+                          </Pressable>
+                        );
+                      })}
+                    </ScrollView>
+                    <ThemedText type="small" themeColor="textSecondary" style={styles.lensHint}>
+                      {lensOptions.length === 0
+                        ? 'This device reports one rear camera. Ultra-wide appears only when the phone or browser exposes it separately.'
+                        : 'Auto uses the default rear lens at up to 4K. Choose Main · high quality when listed, or Ultra-wide for a close-up screen; some Android builds merge physical lenses.'}
+                    </ThemedText>
+                  </View>
                 )}
 
                 {cameraError && (
@@ -385,6 +525,11 @@ const styles = StyleSheet.create({
   primaryBtn: { alignSelf: 'flex-start', borderRadius: 10, paddingHorizontal: Spacing.four, paddingVertical: Spacing.three },
   secondaryBtn: { borderWidth: 1, borderRadius: 10, paddingHorizontal: Spacing.three, paddingVertical: Spacing.three },
   videoBox: { height: 340, borderWidth: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: '#05070A' },
+  lensBox: { borderWidth: 1, borderRadius: 12, padding: Spacing.three, gap: Spacing.two },
+  lensHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: Spacing.two },
+  lensRow: { gap: Spacing.two, paddingVertical: Spacing.half },
+  lensChip: { borderWidth: 1, borderRadius: 999, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
+  lensHint: { fontSize: 12, lineHeight: 18 },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   actionRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
 });

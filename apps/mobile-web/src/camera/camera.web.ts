@@ -16,22 +16,28 @@ class WebCameraSource implements ICameraSource {
       return [];
     }
 
+    let devices = await navigator.mediaDevices.enumerateDevices();
+    let videoInputs = devices.filter((d) => d.kind === 'videoinput');
+
     // A short getUserMedia call is required before enumerateDevices returns labels.
-    try {
-      const probe = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-      for (const t of probe.getTracks()) t.stop();
-    } catch {
-      // If permission is already granted, labels are available without this probe.
+    // Skip the probe once labels exist so selecting a lens never opens a second
+    // camera while the live stream is running.
+    if (videoInputs.length === 0 || videoInputs.some((d) => !d.label)) {
+      try {
+        const probe = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        for (const t of probe.getTracks()) t.stop();
+      } catch {
+        // If permission is already granted, labels are available without this probe.
+      }
+      devices = await navigator.mediaDevices.enumerateDevices();
+      videoInputs = devices.filter((d) => d.kind === 'videoinput');
     }
 
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    return devices
-      .filter((d) => d.kind === 'videoinput')
-      .map((d, i) => ({
-        id: d.deviceId,
-        name: d.label || `Camera ${i + 1}`,
-        position: guessPosition(d.label),
-      }));
+    return videoInputs.map((d, i) => ({
+      id: d.deviceId,
+      name: d.label || `Camera ${i + 1}`,
+      position: guessPosition(d.label),
+    }));
   }
 
   async getFormats(_deviceId: string): Promise<CameraFormat[]> {
@@ -58,19 +64,19 @@ class WebCameraSource implements ICameraSource {
         width: { min: minimum.width, ideal: preferred.width },
         height: { min: minimum.height, ideal: preferred.height },
         frameRate: { ideal: format.fps, max: format.fps },
-        ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
+        ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: this.facingMode } }),
       },
       {
         width: { ideal: format.width },
         height: { ideal: format.height },
         frameRate: { ideal: format.fps, max: format.fps },
-        ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
+        ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: this.facingMode } }),
       },
       {
         width: { ideal: CONFIG.CAMERA_FALLBACK_RESOLUTION.width },
         height: { ideal: CONFIG.CAMERA_FALLBACK_RESOLUTION.height },
         frameRate: { ideal: format.fps, max: format.fps },
-        ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
+        ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: this.facingMode } }),
       },
     ];
 
@@ -150,6 +156,10 @@ class WebCameraSource implements ICameraSource {
     }
   }
 
+  setFacingMode(mode: 'user' | 'environment'): void {
+    this.facingMode = mode;
+  }
+
   /** Try to switch between front and rear camera while keeping the stream running. */
   async flipCamera(): Promise<void> {
     const track = this.getVideoTrack();
@@ -189,7 +199,13 @@ class WebCameraSource implements ICameraSource {
     return this.stream;
   }
 
-  getActualSettings(): { width: number; height: number; fps: number; facingMode?: string } | null {
+  getActualSettings(): {
+    width: number;
+    height: number;
+    fps: number;
+    facingMode?: string;
+    deviceId?: string;
+  } | null {
     const track = this.getVideoTrack();
     if (!track) return null;
     const s = track.getSettings();
@@ -198,6 +214,7 @@ class WebCameraSource implements ICameraSource {
       height: s.height ?? 0,
       fps: Math.round((s.frameRate ?? 0) * 10) / 10,
       facingMode: s.facingMode ?? this.facingMode,
+      deviceId: s.deviceId,
     };
   }
 

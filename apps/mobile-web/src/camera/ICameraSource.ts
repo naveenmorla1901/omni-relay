@@ -17,11 +17,20 @@ export interface ICameraSource {
   lockExposureFocusWhiteBalance(): Promise<void>;
   setTorch(enabled: boolean): Promise<void>;
 
+  /** Set the desired facing for the Auto camera selection. */
+  setFacingMode(mode: 'user' | 'environment'): void;
+
   getStream(): MediaStream | null;
   onFrame(callback: (frame: VideoFrame) => void): () => void;
 
-  /** Returns the actual resolution/fps/facingMode the browser granted. Null if no stream. */
-  getActualSettings(): { width: number; height: number; fps: number; facingMode?: string } | null;
+  /** Returns the actual resolution/fps/facingMode/deviceId the browser granted. Null if no stream. */
+  getActualSettings(): {
+    width: number;
+    height: number;
+    fps: number;
+    facingMode?: string;
+    deviceId?: string;
+  } | null;
 
   /** Web-only: toggle front/rear camera. No-op on native. */
   flipCamera?(): Promise<void>;

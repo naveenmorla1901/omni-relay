@@ -29,6 +29,8 @@ import { useSessionStore } from '@/store/session';
 
 type SendMode = 'image' | 'code';
 
+type DeletePrompt = { kind: 'capture'; id: string } | { kind: 'all' };
+
 type CapturedFrame = {
   id: string;
   ts: number;
@@ -77,6 +79,7 @@ function AdminWorkspace() {
   const [autoCropEnabled, setAutoCropEnabled] = useState<boolean>(CONFIG.AUTO_CROP_ON_DETECT);
   const [preCrop, setPreCrop] = useState<CapturedFrame | null>(null);
   const [wasCropped, setWasCropped] = useState(false);
+  const [deletePrompt, setDeletePrompt] = useState<DeletePrompt | null>(null);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const previousQuadRef = useRef<QuadCorners | null>(null);
   const lastRedetectRef = useRef(0);
@@ -133,6 +136,43 @@ function AdminWorkspace() {
     setDownloadStatus('Downloaded');
     setTimeout(() => setDownloadStatus(null), 2500);
   }, [activeCapture]);
+
+  const resetCaptureView = useCallback(() => {
+    cropIdRef.current++;
+    detectionIdRef.current++;
+    previousQuadRef.current = null;
+    setDetectedCorners(null);
+    setPreviewOverlayUrl(null);
+    setQuadProcessing(false);
+    setPreCrop(null);
+    setWasCropped(false);
+    setDownloadStatus(null);
+    setSendStatus(null);
+    setZoomVisible(false);
+    setZoomScale(1);
+  }, []);
+
+  const deleteCapture = useCallback((id: string) => {
+    const remaining = gallery.filter((frame) => frame.id !== id);
+    setGallery(remaining);
+    if (preCrop?.id === id) setPreCrop(null);
+    if (activeCapture?.id === id) {
+      setActiveCapture(remaining[0] ?? null);
+      resetCaptureView();
+    }
+  }, [activeCapture, gallery, preCrop, resetCaptureView]);
+
+  const confirmDelete = useCallback(() => {
+    if (!deletePrompt) return;
+    if (deletePrompt.kind === 'all') {
+      setGallery([]);
+      setActiveCapture(null);
+      resetCaptureView();
+    } else {
+      deleteCapture(deletePrompt.id);
+    }
+    setDeletePrompt(null);
+  }, [deleteCapture, deletePrompt, resetCaptureView]);
 
   // Recorder's Re-lock button asks the Admin to re-run detection over Link A.
   useEffect(() => {
@@ -393,25 +433,50 @@ function AdminWorkspace() {
 
                   {gallery.length > 0 && (
                     <View style={[styles.galleryWrap, { borderColor: theme.border }]}>
-                      <ThemedText type="small" themeColor="textSecondary" style={{ fontSize: 12 }}>
-                        Gallery — tap to select
-                      </ThemedText>
+                      <View style={styles.galleryHeader}>
+                        <ThemedText type="small" themeColor="textSecondary" style={{ fontSize: 12 }}>
+                          Gallery — tap to select
+                        </ThemedText>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="Clear all captures"
+                          onPress={() => setDeletePrompt({ kind: 'all' })}
+                          style={({ pressed }) => [
+                            styles.galleryClear,
+                            { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' },
+                          ]}>
+                          <ThemedText type="smallBold" style={{ color: theme.danger, fontSize: 12 }}>Clear all</ThemedText>
+                        </Pressable>
+                      </View>
                       <ScrollView horizontal showsHorizontalScrollIndicator={false}>
                         {gallery.map((frame) => {
                           const active = activeCapture?.id === frame.id;
                           return (
-                            <Pressable
-                              key={frame.id}
-                              onPress={() => { cropIdRef.current++; setActiveCapture(frame); setDetectedCorners(null); setPreviewOverlayUrl(null); setDownloadStatus(null); setPreCrop(null); setWasCropped(false); }}
-                              style={[
-                                styles.thumb,
-                                { borderColor: active ? theme.accent : theme.border, borderWidth: active ? 2 : 1 },
-                              ]}>
-                              <Image source={{ uri: frame.dataUrl }} style={styles.thumbImg} resizeMode="cover" />
-                              <ThemedText type="code" themeColor="textSecondary" style={{ fontSize: 10, marginBottom: 2 }}>
-                                {frame.width}×{frame.height}
-                              </ThemedText>
-                            </Pressable>
+                            <View key={frame.id} style={styles.thumbItem}>
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel="Select this capture"
+                                onPress={() => { cropIdRef.current++; setActiveCapture(frame); setDetectedCorners(null); setPreviewOverlayUrl(null); setDownloadStatus(null); setPreCrop(null); setWasCropped(false); }}
+                                style={[
+                                  styles.thumb,
+                                  { borderColor: active ? theme.accent : theme.border, borderWidth: active ? 2 : 1 },
+                                ]}>
+                                <Image source={{ uri: frame.dataUrl }} style={styles.thumbImg} resizeMode="cover" />
+                                <ThemedText type="code" themeColor="textSecondary" style={{ fontSize: 10, marginBottom: 2 }}>
+                                  {frame.width}×{frame.height}
+                                </ThemedText>
+                              </Pressable>
+                              <Pressable
+                                accessibilityRole="button"
+                                accessibilityLabel="Delete this capture"
+                                onPress={() => setDeletePrompt({ kind: 'capture', id: frame.id })}
+                                style={({ pressed }) => [
+                                  styles.thumbDelete,
+                                  { backgroundColor: pressed ? theme.backgroundSelected : 'transparent' },
+                                ]}>
+                                <ThemedText type="smallBold" style={{ color: theme.danger, fontSize: 11 }}>Delete</ThemedText>
+                              </Pressable>
+                            </View>
                           );
                         })}
                       </ScrollView>
@@ -461,6 +526,16 @@ function AdminWorkspace() {
                             { borderColor: theme.success, backgroundColor: pressed ? theme.backgroundSelected : 'rgba(0,200,100,0.10)' },
                           ]}>
                           <ThemedText type="smallBold" style={{ color: theme.success }}>⬇ Download</ThemedText>
+                        </Pressable>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel="Delete this capture"
+                          onPress={() => setDeletePrompt({ kind: 'capture', id: activeCapture.id })}
+                          style={({ pressed }) => [
+                            styles.iconBtn,
+                            { borderColor: theme.danger, backgroundColor: pressed ? theme.backgroundSelected : 'transparent' },
+                          ]}>
+                          <ThemedText type="smallBold" style={{ color: theme.danger }}>Delete</ThemedText>
                         </Pressable>
                         <Pressable
                           accessibilityRole="button"
@@ -665,6 +740,44 @@ function AdminWorkspace() {
           </ScrollView>
         </View>
       </Modal>
+
+      {/* ── Delete confirmation ───────────────────────────────────── */}
+      <Modal visible={deletePrompt !== null} transparent animationType="fade" onRequestClose={() => setDeletePrompt(null)}>
+        <View style={styles.confirmOverlay}>
+          <View style={[styles.confirmCard, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+            <ThemedText type="smallBold" style={{ fontSize: 18 }}>
+              {deletePrompt?.kind === 'all' ? 'Clear all captures?' : 'Delete this capture?'}
+            </ThemedText>
+            <ThemedText type="small" themeColor="textSecondary">
+              {deletePrompt?.kind === 'all'
+                ? `Remove all ${gallery.length} picture${gallery.length === 1 ? '' : 's'} from this gallery? This cannot be undone.`
+                : 'Remove this picture from the gallery? This cannot be undone.'}
+            </ThemedText>
+            <View style={[styles.row, { justifyContent: 'flex-end' }]}>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setDeletePrompt(null)}
+                style={({ pressed }) => [
+                  styles.secondaryBtn,
+                  { borderColor: theme.border, backgroundColor: pressed ? theme.backgroundSelected : 'transparent' },
+                ]}>
+                <ThemedText type="smallBold">Cancel</ThemedText>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={confirmDelete}
+                style={({ pressed }) => [
+                  styles.primaryBtn,
+                  { backgroundColor: theme.danger, opacity: pressed ? 0.8 : 1 },
+                ]}>
+                <ThemedText type="smallBold" style={{ color: theme.backgroundElement }}>
+                  {deletePrompt?.kind === 'all' ? 'Clear all' : 'Delete'}
+                </ThemedText>
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </ThemedView>
   );
 }
@@ -737,7 +850,11 @@ const styles = StyleSheet.create({
   paneHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   videoBox: { height: 340, borderWidth: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: '#05070A' },
   galleryWrap: { borderWidth: 1, borderRadius: 14, padding: Spacing.three, gap: Spacing.two },
-  thumb: { borderRadius: 8, overflow: 'hidden', marginRight: Spacing.two, alignItems: 'center' },
+  galleryHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: Spacing.two },
+  galleryClear: { borderRadius: 6, paddingHorizontal: Spacing.two, paddingVertical: Spacing.half },
+  thumbItem: { alignItems: 'center', marginRight: Spacing.two },
+  thumb: { borderRadius: 8, overflow: 'hidden', alignItems: 'center' },
+  thumbDelete: { borderRadius: 6, paddingHorizontal: Spacing.two, paddingVertical: Spacing.half },
   thumbImg: { width: 96, height: 72, borderRadius: 6 },
   captureSection: { borderWidth: 1, borderRadius: 14, padding: Spacing.three, gap: Spacing.two },
   capturePreviewLarge: { width: '100%', aspectRatio: 4 / 3, borderRadius: 10 },
@@ -753,4 +870,6 @@ const styles = StyleSheet.create({
   zoomToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.three, paddingTop: 48, paddingBottom: Spacing.three },
   zoomBtn: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', borderRadius: 10, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   zoomScroll: { flex: 1 },
+  confirmOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.55)', justifyContent: 'center', alignItems: 'center', padding: Spacing.four },
+  confirmCard: { width: '100%', maxWidth: 440, borderWidth: 1, borderRadius: 16, padding: Spacing.four, gap: Spacing.three },
 });

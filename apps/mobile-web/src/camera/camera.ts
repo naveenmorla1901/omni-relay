@@ -27,7 +27,12 @@ class NativeCameraSource implements ICameraSource {
         .map((d: any, i: number) => ({
           id: d.deviceId as string,
           name: (d.label as string) || `Camera ${i + 1}`,
-          position: guessPosition(d.label ?? ''),
+          position:
+            d.facing === 'front'
+              ? 'front'
+              : d.facing === 'environment'
+                ? 'back'
+                : guessPosition(d.label ?? ''),
         }));
     } catch {
       return [];
@@ -124,6 +129,10 @@ class NativeCameraSource implements ICameraSource {
     } catch { /* best-effort */ }
   }
 
+  setFacingMode(mode: 'user' | 'environment'): void {
+    this.facingMode = mode;
+  }
+
   async flipCamera(): Promise<void> {
     this.facingMode = this.facingMode === 'environment' ? 'user' : 'environment';
     if (this.stream) {
@@ -139,15 +148,22 @@ class NativeCameraSource implements ICameraSource {
     return this.stream as globalThis.MediaStream | null;
   }
 
-  getActualSettings(): { width: number; height: number; fps: number; facingMode?: string } | null {
+  getActualSettings(): {
+    width: number;
+    height: number;
+    fps: number;
+    facingMode?: string;
+    deviceId?: string;
+  } | null {
     const track = this.getVideoTrack();
     if (!track) return null;
-    const s = track.getSettings();
+    const s = track.getSettings() as MediaTrackSettings & { deviceId?: string };
     return {
       width: s.width ?? 0,
       height: s.height ?? 0,
       fps: Math.round((s.frameRate ?? 0) * 10) / 10,
       facingMode: s.facingMode ?? this.facingMode,
+      deviceId: s.deviceId,
     };
   }
 
