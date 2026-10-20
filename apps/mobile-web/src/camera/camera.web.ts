@@ -54,8 +54,8 @@ class WebCameraSource implements ICameraSource {
     // Attempt 3: bare fallback (any camera, any resolution)
     const attempts: MediaTrackConstraints[] = [
       {
-        width: { min: 1280, ideal: format.width },
-        height: { min: 720, ideal: format.height },
+        width: { min: 1280, ideal: 3840 },
+        height: { min: 720, ideal: 2160 },
         frameRate: { ideal: format.fps, max: format.fps },
         ...(deviceId ? { deviceId: { exact: deviceId } } : { facingMode: { ideal: 'environment' } }),
       },

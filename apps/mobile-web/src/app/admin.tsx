@@ -3,6 +3,7 @@ import { useCallback, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -19,7 +20,7 @@ import { VideoView } from '@/components/video-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { usePairing } from '@/hooks/use-pairing';
 import { useTheme } from '@/hooks/use-theme';
-import { enhanceCapture } from '@/lib/cv';
+import { enhanceCapture, rotateImage } from '@/lib/cv';
 import { useSessionStore } from '@/store/session';
 
 type SendMode = 'image' | 'code';
@@ -63,6 +64,7 @@ function AdminWorkspace() {
   const [gallery, setGallery] = useState<CapturedFrame[]>([]);
   const [activeCapture, setActiveCapture] = useState<CapturedFrame | null>(null);
   const [sendStatus, setSendStatus] = useState<string | null>(null);
+  const [zoomVisible, setZoomVisible] = useState(false);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const wide = width >= 1000;
   const recorderLive = pairing.phase === 'connected';
@@ -75,9 +77,34 @@ function AdminWorkspace() {
     if (!frame) return;
     setGallery((prev) => [frame, ...prev].slice(0, 20));
     setActiveCapture(frame);
-    setSendMode('image');
     setSendStatus(null);
   }, []);
+
+  const rotateCW = useCallback(async () => {
+    if (!activeCapture) return;
+    const newDataUrl = await rotateImage(activeCapture.dataUrl, 90);
+    const updated: CapturedFrame = {
+      ...activeCapture,
+      dataUrl: newDataUrl,
+      width: activeCapture.height,
+      height: activeCapture.width,
+    };
+    setActiveCapture(updated);
+    setGallery((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
+  }, [activeCapture]);
+
+  const rotateCCW = useCallback(async () => {
+    if (!activeCapture) return;
+    const newDataUrl = await rotateImage(activeCapture.dataUrl, -90);
+    const updated: CapturedFrame = {
+      ...activeCapture,
+      dataUrl: newDataUrl,
+      width: activeCapture.height,
+      height: activeCapture.width,
+    };
+    setActiveCapture(updated);
+    setGallery((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
+  }, [activeCapture]);
 
   const handleSendToProjector = useCallback(() => {
     if (sendMode === 'image' && activeCapture) {
@@ -213,7 +240,7 @@ function AdminWorkspace() {
           <View style={[styles.workspace, wide && styles.workspaceWide]}>
 
             {/* Left pane: live feed */}
-            <View style={[styles.pane, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+            <View style={[styles.pane, styles.paneLeft, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
               <View style={styles.paneHeader}>
                 <ThemedText type="smallBold">Live feed</ThemedText>
                 <ThemedText type="code" themeColor="textSecondary">
@@ -259,7 +286,7 @@ function AdminWorkspace() {
                           return (
                             <Pressable
                               key={frame.id}
-                              onPress={() => { setActiveCapture(frame); setSendMode('image'); }}
+                              onPress={() => { setActiveCapture(frame); }}
                               style={[
                                 styles.thumb,
                                 { borderColor: active ? theme.accent : theme.border, borderWidth: active ? 2 : 1 },
@@ -274,6 +301,48 @@ function AdminWorkspace() {
                       </ScrollView>
                     </View>
                   )}
+
+                  {activeCapture && (
+                    <View style={[styles.captureSection, { borderColor: theme.border }]}>
+                      <Image
+                        source={{ uri: activeCapture.dataUrl }}
+                        style={[styles.capturePreviewLarge, { backgroundColor: '#05070A' }]}
+                        resizeMode="contain"
+                      />
+                      <View style={styles.row}>
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => void rotateCCW()}
+                          style={({ pressed }) => [
+                            styles.iconBtn,
+                            { borderColor: theme.border, backgroundColor: pressed ? theme.backgroundSelected : 'transparent' },
+                          ]}>
+                          <ThemedText type="small">↺ Rotate CCW</ThemedText>
+                        </Pressable>
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => void rotateCW()}
+                          style={({ pressed }) => [
+                            styles.iconBtn,
+                            { borderColor: theme.border, backgroundColor: pressed ? theme.backgroundSelected : 'transparent' },
+                          ]}>
+                          <ThemedText type="small">↻ Rotate CW</ThemedText>
+                        </Pressable>
+                        <Pressable
+                          accessibilityRole="button"
+                          onPress={() => setZoomVisible(true)}
+                          style={({ pressed }) => [
+                            styles.iconBtn,
+                            { borderColor: theme.border, backgroundColor: pressed ? theme.backgroundSelected : 'transparent' },
+                          ]}>
+                          <ThemedText type="small">⤢ Zoom</ThemedText>
+                        </Pressable>
+                      </View>
+                      <ThemedText type="small" themeColor="textSecondary" style={{ fontSize: 12 }}>
+                        {activeCapture.width} × {activeCapture.height} · {new Date(activeCapture.ts).toLocaleTimeString()}
+                      </ThemedText>
+                    </View>
+                  )}
                 </>
               ) : (
                 <ThemedText type="small" themeColor="textSecondary">
@@ -285,7 +354,7 @@ function AdminWorkspace() {
             </View>
 
             {/* Right pane: send to Projector */}
-            <View style={[styles.pane, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+            <View style={[styles.pane, styles.paneRight, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
               <View style={styles.paneHeader}>
                 <ThemedText type="smallBold">Send to Projector</ThemedText>
                 <ThemedText type="code" themeColor={projectorReady ? 'text' : 'textSecondary'}>
@@ -346,18 +415,10 @@ function AdminWorkspace() {
                   <ThemedText type="small" themeColor="textSecondary" style={{ fontSize: 12 }}>
                     {activeCapture.width} × {activeCapture.height} · {new Date(activeCapture.ts).toLocaleTimeString()}
                   </ThemedText>
-                  <Pressable
-                    onPress={() => setActiveCapture(null)}
-                    style={({ pressed }) => [
-                      styles.secondaryBtn,
-                      { alignSelf: 'flex-end', borderColor: theme.border, backgroundColor: pressed ? theme.backgroundSelected : 'transparent' },
-                    ]}>
-                    <ThemedText type="small" themeColor="textSecondary">Clear</ThemedText>
-                  </Pressable>
                 </View>
               ) : (
                 <View style={[styles.imageDrop, { borderColor: theme.border, backgroundColor: theme.background }]}>
-                  <ThemedText type="smallBold" themeColor="textSecondary">No capture yet</ThemedText>
+                  <ThemedText type="smallBold" themeColor="textSecondary">No capture selected</ThemedText>
                   <ThemedText type="small" themeColor="textSecondary">
                     {recorderLive ? 'Press "Capture still" to grab a frame.' : 'Connect Recorder first, then capture.'}
                   </ThemedText>
@@ -389,6 +450,17 @@ function AdminWorkspace() {
 
         </ScrollView>
       </SafeAreaView>
+
+      {/* ── Zoom modal ───────────────────────────────────────────── */}
+      <Modal visible={zoomVisible} transparent animationType="fade" onRequestClose={() => setZoomVisible(false)}>
+        <Pressable style={styles.zoomOverlay} onPress={() => setZoomVisible(false)}>
+          <Image
+            source={{ uri: activeCapture?.dataUrl ?? '' }}
+            style={styles.zoomImage}
+            resizeMode="contain"
+          />
+        </Pressable>
+      </Modal>
     </ThemedView>
   );
 }
@@ -449,18 +521,23 @@ const styles = StyleSheet.create({
   bigCode: { fontSize: 42, fontWeight: '700', fontFamily: 'monospace' },
   deviceStatusList: { gap: Spacing.two },
   deviceRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
+  row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, flexWrap: 'wrap' },
   errorBox: { borderWidth: 1, borderRadius: 10, padding: Spacing.three },
   primaryBtn: { alignSelf: 'flex-start', borderRadius: 10, paddingHorizontal: Spacing.four, paddingVertical: Spacing.three },
   secondaryBtn: { alignSelf: 'flex-start', borderWidth: 1, borderRadius: 10, paddingHorizontal: Spacing.four, paddingVertical: Spacing.three },
   workspace: { gap: Spacing.three },
   workspaceWide: { flexDirection: 'row', alignItems: 'stretch' },
-  pane: { flex: 1, borderWidth: 1, borderRadius: 20, padding: Spacing.four, gap: Spacing.three },
+  pane: { borderWidth: 1, borderRadius: 20, padding: Spacing.four, gap: Spacing.three },
+  paneLeft: { flex: 2 },
+  paneRight: { flex: 1 },
   paneHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   videoBox: { height: 340, borderWidth: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: '#05070A' },
   galleryWrap: { borderWidth: 1, borderRadius: 14, padding: Spacing.three, gap: Spacing.two },
   thumb: { borderRadius: 8, overflow: 'hidden', marginRight: Spacing.two, alignItems: 'center' },
   thumbImg: { width: 96, height: 72, borderRadius: 6 },
+  captureSection: { borderWidth: 1, borderRadius: 14, padding: Spacing.three, gap: Spacing.two },
+  capturePreviewLarge: { width: '100%', aspectRatio: 4 / 3, borderRadius: 10 },
+  iconBtn: { borderWidth: 1, borderRadius: 10, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   tabs: { flexDirection: 'row', gap: Spacing.two },
   tab: { borderWidth: 1, borderRadius: 999, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   codeInput: { minHeight: 190, borderWidth: 1, borderRadius: 12, fontSize: 14, lineHeight: 20, padding: Spacing.three },
@@ -468,4 +545,6 @@ const styles = StyleSheet.create({
   imageDrop: { minHeight: 200, borderWidth: 1, borderStyle: 'dashed', borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: Spacing.two, padding: Spacing.four },
   capturePreview: { width: '100%', aspectRatio: 16 / 9, borderRadius: 10, backgroundColor: '#05070A' },
   sendBtn: { alignItems: 'center', borderRadius: 12, paddingHorizontal: Spacing.four, paddingVertical: Spacing.three },
+  zoomOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.92)', alignItems: 'center', justifyContent: 'center' },
+  zoomImage: { width: '100%', height: '100%' },
 });

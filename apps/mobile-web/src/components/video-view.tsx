@@ -1,4 +1,5 @@
 import { StyleSheet, View } from 'react-native';
+import { RTCView } from 'react-native-webrtc';
 
 import { ThemedText } from '@/components/themed-text';
 
@@ -8,30 +9,29 @@ type VideoViewProps = {
   onVideoElement?: (el: null) => void;
 };
 
-/** Native video rendering will be added with the react-native-webrtc integration. */
-export function VideoView({ placeholder = 'Video preview is available in the web build.' }: VideoViewProps) {
+export function VideoView({ stream, placeholder = 'Starting camera…' }: VideoViewProps) {
+  const streamURL = stream ? (stream as unknown as { toURL(): string }).toURL() : null;
   return (
     <View style={styles.container}>
-      <View style={styles.placeholder}>
-        <ThemedText type="small" themeColor="textSecondary">
-          {placeholder}
-        </ThemedText>
-      </View>
+      {streamURL ? (
+        <RTCView
+          streamURL={streamURL}
+          style={styles.video}
+          objectFit="contain"
+          mirror={false}
+          zOrder={0}
+        />
+      ) : (
+        <View style={styles.placeholder}>
+          <ThemedText type="small" themeColor="textSecondary">{placeholder}</ThemedText>
+        </View>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    minHeight: 240,
-    overflow: 'hidden',
-    backgroundColor: '#05070A',
-  },
-  placeholder: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 24,
-  },
+  container: { flex: 1, minHeight: 240, overflow: 'hidden', backgroundColor: '#05070A' },
+  video: { flex: 1 },
+  placeholder: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24 },
 });

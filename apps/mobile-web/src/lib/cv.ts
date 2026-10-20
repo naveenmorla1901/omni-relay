@@ -109,3 +109,23 @@ function findClip(hist: Uint32Array, threshold: number, fromEnd: boolean): numbe
 function clamp(v: number): number {
   return v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
 }
+
+/** Rotate a JPEG data-URL by clockwise degrees (90 or -90/270). Returns a new data-URL. */
+export function rotateImage(dataUrl: string, cwDegrees: 90 | 180 | 270 | -90): Promise<string> {
+  const deg = ((cwDegrees % 360) + 360) % 360;
+  return new Promise((resolve) => {
+    const img = new window.Image();
+    img.onload = () => {
+      const swap = deg === 90 || deg === 270;
+      const canvas = document.createElement('canvas');
+      canvas.width = swap ? img.height : img.width;
+      canvas.height = swap ? img.width : img.height;
+      const ctx = canvas.getContext('2d')!;
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate((deg * Math.PI) / 180);
+      ctx.drawImage(img, -img.width / 2, -img.height / 2);
+      resolve(canvas.toDataURL('image/jpeg', 0.97));
+    };
+    img.src = dataUrl;
+  });
+}
