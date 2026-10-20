@@ -77,10 +77,10 @@ Canvas draws the live `<video>` at intrinsic resolution, then `enhanceCapture()`
 
 **Live at:** `https://naveenmorla1901.github.io/omni-relay/`
 **Signaling server:** `wss://omni-relay-production-d45c.up.railway.app` (Railway, `services/signaling/`, PORT=8081)
-**Latest APK:** v0.1.4 on GitHub Releases (`assembleRelease`, debug-keystore signing)
+**Latest APK:** v0.1.5 on GitHub Releases (`assembleRelease`, debug-keystore signing)
 
-Completed: M0–M5 — scaffold, room-code pairing, live video, Admin capture gallery, Admin→Projector image push, pure-TS quad detection + perspective warp. APK v0.1.4 runs on a physical Android device. The 2026-10-20 device-testing backlog is implemented in code: 4K/detail camera tuning, fixed quad candidate NMS + synthetic regression tests, Re-lock redetect, auto-crop with Undo, 1–4× zoom, capture Download, front-camera mirror sync, and web Projector drag/drop + paste image/code. Local checks are green (typecheck, lint, 20 tests, web export).
+Completed: M0–M5 — scaffold, room-code pairing, live video, Admin capture gallery, Admin→Projector image push, pure-TS quad detection + perspective warp. APK v0.1.5 was built from `d66f92a` and published to GitHub Releases. The 2026-10-20 device-testing backlog is implemented in code: 4K/detail camera tuning, fixed quad candidate NMS + synthetic regression tests, Re-lock redetect, auto-crop with Undo, 1–4× zoom, capture Download, front-camera mirror sync, and web Projector drag/drop + paste image/code. Local checks are green (typecheck, lint, 20 tests, web export).
 
 Known issues: the deployed Railway relay runs pre-M4 code — Admin→Projector `push` fails in production until `services/signaling` is redeployed. The new camera quality/detection/zoom work still needs real-device verification.
 
-Next: device-test the backlog, redeploy the relay, then the M5 remainder (CLAHE, raw-frame fallback) or M6 camera tuning.
+Next: install APK v0.1.5 and device-test the backlog, redeploy the relay, then the M5 remainder (CLAHE, raw-frame fallback) or M6 camera tuning.

@@ -6,10 +6,10 @@
 > unless a decision is recorded below.
 
 **Last updated:** 2026-10-20
-**Current milestone:** M0–M5 complete (web + Android APK v0.1.4). Device-testing backlog implemented: 4K/detail camera tuning, robust quad detection, auto-fit with Undo, 1–4× zoom, capture Download, camera-flip mirror sync, Projector drag/drop + paste.
-**Current stop point:** All requested backlog items are implemented in code and the local checks are green (typecheck, lint, 20 unit tests, web export). The Admin capture now detects screens reliably in synthetic tests (the candidate NMS bug that made detection return null was fixed), auto-crops after a 450 ms preview by default, keeps the original in the gallery, and offers Undo. Download, 1–4× zoom, mirror sync, and Projector local input are wired. Real-device verification is still pending.
-**Next action:** Test on the physical Android Recorder + web Admin: 4K/detail quality, detection on a real screen, auto-crop/Undo, Download, front-camera mirror, and Projector drag/drop/paste. Then redeploy the Railway signaling relay from current `main` and re-run the remote create/join/push test.
-**As of commit:** `b9f9354` (main; code commit for this session; docs commit follows)
+**Current milestone:** M0–M5 complete (web + Android APK v0.1.5). Device-testing backlog implemented: 4K/detail camera tuning, robust quad detection, auto-fit with Undo, 1–4× zoom, capture Download, camera-flip mirror sync, Projector drag/drop + paste.
+**Current stop point:** All requested backlog items are implemented in code and the local checks are green (typecheck, lint, 20 unit tests, web export). The Admin capture now detects screens reliably in synthetic tests (the candidate NMS bug that made detection return null was fixed), auto-crops after a 450 ms preview by default, keeps the original in the gallery, and offers Undo. Download, 1–4× zoom, mirror sync, and Projector local input are wired. Web is deployed; APK v0.1.5 was built from `d66f92a` and published. Real-device verification is still pending.
+**Next action:** Install APK v0.1.5 on the Android Recorder and test with the web Admin: 4K/detail quality, detection on a real screen, auto-crop/Undo, Download, front-camera mirror, and Projector drag/drop/paste. Then redeploy the Railway signaling relay from current `main` and re-run the remote create/join/push test.
+**As of commit:** `d66f92a` (main; APK v0.1.5 built from this commit; later docs commits are metadata)
 **Blocker:** the deployed Railway relay runs pre-M4 code — Admin→Projector `push` fails in production until `services/signaling` is redeployed. Real-device verification of the new detection/quality work is also pending.
 
 ## How to update this file
@@ -140,7 +140,8 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [ ] Full responsive Admin polish
 - [x] Web deploy workflow (GitHub Pages, auto on push to main)
 - [x] GitHub Actions Android APK workflow (`build-android.yml` — `assembleRelease` + debug keystore, triggers on `v*` tag or manual)
-- [x] APK v0.1.4 published to GitHub Releases — runs on physical Android device
+- [x] APK v0.1.5 published to GitHub Releases — built from `d66f92a`; install and run the device-testing backlog checklist
+- [x] APK v0.1.4 published to GitHub Releases — previous build, superseded by v0.1.5
 - [~] Smoke-test on physical Android device — app launches, camera shows, video transmits to Admin
 - [ ] iOS build (PWA via Pages is the personal-use path; EAS for wider distribution)
 - [ ] Final device matrix and release checklist
@@ -180,7 +181,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] `.npmrc` with fetch-retry hardening for CI
 - [x] iOS personal use: add GitHub Pages URL to Safari home screen as PWA
 - [x] Android APK CI: `assembleRelease` + debug-keystore signing; triggers on `v*` tag
-- [x] APK v0.1.4 live at `github.com/naveenmorla1901/omni-relay/releases/latest`
+- [x] APK v0.1.5 live at `github.com/naveenmorla1901/omni-relay/releases/latest`
 - [x] Download APK button on home screen links to latest release
 - [ ] Android keystore + signed release APK (for Play Store / wider distribution)
 
@@ -239,4 +240,5 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **2026-10-20** — Native camera preview, admin redesign: `video-view.tsx` now renders `RTCView` for local stream on Android. Admin left pane wider (flex:2), capture stays in left pane (not auto-sent to right), rotate CCW/CW buttons, zoom modal. Camera tries 4K first. `rotateImage()` added to cv.ts.
 - **2026-10-20** — M5 quad detection + perspective warp: `src/lib/quad.ts` — pure-TS, no OpenCV.js. Pipeline: grayscale → blur5x5 → Sobel → Otsu → diagonal corner projection → convexity validation → DLT homography → bilinear warp. Admin shows blue quad overlay after capture; "Auto-crop" button warps to flat rectangle.
 - **2026-10-20** — Backlog recorded from device testing: Recorder quality, quad auto-detection reliability (incl. Re-lock re-trigger), auto-fit + auto camera settings, zoom fix, capture download button, flip mirroring on Admin, Projector drag-drop/paste input.
-- **2026-10-20** — Audit + backlog implementation: found and fixed the quad detector NMS bug (it deleted real corners and returned `null` on clean screens), added `quad.test.ts` synthetic regression tests, capped candidates at 10 with a 1.5 s detection budget, fixed the Re-lock redetect loop with a request-id guard, added the Download helper/button, replaced the static zoom modal with a 1–4× scrollable modal, wired front-camera mirror sync (`camera` message + `mirror` prop on both VideoViews), added auto-crop-on-detect with original-preserving gallery entries + Undo, and added the web Projector drop zone/file picker/paste image-or-code (with local preview and input-safe paste). Checks: typecheck, lint, 20 tests, web export all green. Railway relay redeploy still pending.
+- **2026-10-20** — Audit + backlog implementation: found and fixed the quad detector NMS bug (it deleted real corners and returned `null` on clean screens), added `quad.test.ts` synthetic regression tests, capped candidates at 10 with a 1.5 s detection budget, fixed the Re-lock redetect loop with a request-id guard, added the Download helper/button, replaced the static zoom modal with a 1–4× scrollable modal, wired front-camera mirror sync (`camera` message + `mirror` prop on both VideoViews), added auto-crop-on-detect with original-preserving gallery entries + Undo, and added the web Projector drop zone/file picker/paste image-or-code (with local preview and input-safe paste). Checks: typecheck, lint, 20 tests, web export all green.
+- **2026-10-20** — Pushed `b9f9354` (code) + `d66f92a` (docs); CI and Deploy web green. Tagged `v0.1.5`; the Android workflow built and published `ClearRelay-v0.1.5.apk` (135 MB). Railway relay redeploy still pending.
