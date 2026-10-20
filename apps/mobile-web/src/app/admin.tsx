@@ -21,6 +21,8 @@ import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { usePairing } from '@/hooks/use-pairing';
 import { useTheme } from '@/hooks/use-theme';
 import { enhanceCapture, rotateImage } from '@/lib/cv';
+import { detectAndOverlay, warpAndCrop } from '@/lib/quad';
+import type { QuadCorners } from '@/lib/quad';
 import { useSessionStore } from '@/store/session';
 
 type SendMode = 'image' | 'code';
@@ -65,6 +67,9 @@ function AdminWorkspace() {
   const [activeCapture, setActiveCapture] = useState<CapturedFrame | null>(null);
   const [sendStatus, setSendStatus] = useState<string | null>(null);
   const [zoomVisible, setZoomVisible] = useState(false);
+  const [detectedCorners, setDetectedCorners] = useState<QuadCorners | null>(null);
+  const [previewOverlayUrl, setPreviewOverlayUrl] = useState<string | null>(null);
+  const [quadProcessing, setQuadProcessing] = useState(false);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
   const wide = width >= 1000;
   const recorderLive = pairing.phase === 'connected';
@@ -78,6 +83,14 @@ function AdminWorkspace() {
     setGallery((prev) => [frame, ...prev].slice(0, 20));
     setActiveCapture(frame);
     setSendStatus(null);
+    setDetectedCorners(null);
+    setPreviewOverlayUrl(null);
+    setQuadProcessing(true);
+    detectAndOverlay(frame.dataUrl).then(({ corners, overlayDataUrl }) => {
+      setDetectedCorners(corners);
+      setPreviewOverlayUrl(overlayDataUrl);
+      setQuadProcessing(false);
+    });
   }, []);
 
   const rotateCW = useCallback(async () => {
@@ -105,6 +118,25 @@ function AdminWorkspace() {
     setActiveCapture(updated);
     setGallery((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
   }, [activeCapture]);
+
+  const autoCrop = useCallback(async () => {
+    if (!activeCapture || !detectedCorners) return;
+    const newDataUrl = await warpAndCrop(activeCapture.dataUrl, detectedCorners);
+    const img = new window.Image();
+    img.onload = () => {
+      const updated: CapturedFrame = {
+        ...activeCapture,
+        dataUrl: newDataUrl,
+        width: img.naturalWidth,
+        height: img.naturalHeight,
+      };
+      setActiveCapture(updated);
+      setGallery((prev) => prev.map((f) => (f.id === updated.id ? updated : f)));
+      setDetectedCorners(null);
+      setPreviewOverlayUrl(null);
+    };
+    img.src = newDataUrl;
+  }, [activeCapture, detectedCorners]);
 
   const handleSendToProjector = useCallback(() => {
     if (sendMode === 'image' && activeCapture) {
@@ -286,7 +318,7 @@ function AdminWorkspace() {
                           return (
                             <Pressable
                               key={frame.id}
-                              onPress={() => { setActiveCapture(frame); }}
+                              onPress={() => { setActiveCapture(frame); setDetectedCorners(null); setPreviewOverlayUrl(null); }}
                               style={[
                                 styles.thumb,
                                 { borderColor: active ? theme.accent : theme.border, borderWidth: active ? 2 : 1 },
@@ -305,7 +337,7 @@ function AdminWorkspace() {
                   {activeCapture && (
                     <View style={[styles.captureSection, { borderColor: theme.border }]}>
                       <Image
-                        source={{ uri: activeCapture.dataUrl }}
+                        source={{ uri: previewOverlayUrl ?? activeCapture.dataUrl }}
                         style={[styles.capturePreviewLarge, { backgroundColor: '#05070A' }]}
                         resizeMode="contain"
                       />
@@ -337,9 +369,21 @@ function AdminWorkspace() {
                           ]}>
                           <ThemedText type="small">⤢ Zoom</ThemedText>
                         </Pressable>
+                        {detectedCorners && (
+                          <Pressable
+                            accessibilityRole="button"
+                            onPress={() => void autoCrop()}
+                            style={({ pressed }) => [
+                              styles.iconBtn,
+                              { borderColor: theme.accent, backgroundColor: pressed ? theme.backgroundSelected : 'rgba(0,122,255,0.08)' },
+                            ]}>
+                            <ThemedText type="small" style={{ color: theme.accent }}>⊡ Auto-crop</ThemedText>
+                          </Pressable>
+                        )}
                       </View>
                       <ThemedText type="small" themeColor="textSecondary" style={{ fontSize: 12 }}>
                         {activeCapture.width} × {activeCapture.height} · {new Date(activeCapture.ts).toLocaleTimeString()}
+                        {quadProcessing ? '  · Detecting…' : detectedCorners ? '  · Quad detected' : ''}
                       </ThemedText>
                     </View>
                   )}
