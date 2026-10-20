@@ -6,11 +6,11 @@
 > unless a decision is recorded below.
 
 **Last updated:** 2026-10-20
-**Current milestone:** M0–M5 complete (web + Android APK v0.1.5). Device-testing backlog implemented: 4K/detail camera tuning, robust quad detection, auto-fit with Undo, 1–4× zoom, capture Download, camera-flip mirror sync, Projector drag/drop + paste. Follow-up: Admin capture delete/clear and a Recorder physical rear-lens picker (Auto 4K, Ultra-wide, Main · high quality, Telephoto when exposed).
-**Current stop point:** All requested backlog items plus the Admin delete/clear and Recorder lens-picker follow-up are implemented, and local checks are green (typecheck, lint, 26 unit tests, web export). The Admin now has per-capture Delete, per-thumbnail Delete, and Clear all (with confirmation); deleting the active frame selects the next picture or clears the preview and cancels in-flight detection/crop. The Recorder lists rear lenses and can switch physical cameras when the platform exposes them; Auto requests the default rear lens at up to 4K, and a failed lens switch falls back to Auto. Web is deployed from the previous release; APK v0.1.5 is the latest published build. Real-device verification of the new lens/delete work is still pending.
-**Next action:** Test the new Admin delete/clear flow in the browser. Then install the next APK on the Android Recorder and compare Auto, Ultra-wide, and Main/high-quality lenses at close range; confirm the selected lens reaches the Admin feed. Then redeploy the Railway signaling relay from current `main` and re-run the remote create/join/push test.
-**As of commit:** `01a7a59` (code commit for the Admin delete/clear and Recorder lens-picker follow-up; docs follow)
-**Blocker:** the deployed Railway relay runs pre-M4 code — Admin→Projector `push` fails in production until `services/signaling` is redeployed. Real-device verification of the new lens/quality/delete work is also pending. Some Android builds expose only one logical rear camera, so Ultra-wide is unavailable there regardless of app code.
+**Current milestone:** M0–M5 complete (web + Android APK v0.1.6). Device-testing backlog implemented: 4K/detail camera tuning, robust quad detection, auto-fit with Undo, 1–4× zoom, capture Download, camera-flip mirror sync, Projector drag/drop + paste. Follow-up: Admin capture delete/clear and a Recorder physical rear-lens picker (Auto 4K, Ultra-wide, Main · high quality, Telephoto when exposed).
+**Current stop point:** All requested backlog items plus the Admin delete/clear and Recorder lens-picker follow-up are implemented, and local checks are green (typecheck, lint, 26 unit tests, web export). The Admin now has per-capture Delete, per-thumbnail Delete, and Clear all (with confirmation); deleting the active frame selects the next picture or clears the preview and cancels in-flight detection/crop. The Recorder lists rear lenses and can switch physical cameras when the platform exposes them; Auto requests the default rear lens at up to 4K, and a failed lens switch falls back to Auto. CI and Deploy web are green for `214e9a5`; the live bundle contains the new Admin and Recorder UI. APK v0.1.6 was built from `01a7a59` and published (135,044,026 bytes). Interactive browser/real-device verification of the new lens/delete work is still pending.
+**Next action:** Install APK v0.1.6 on the Android Recorder (uninstall v0.1.5 first if Android rejects the signature). Test Admin Delete / Delete all in a real browser, then compare Auto, Ultra-wide, Main/high-quality, and any numbered rear lenses at close range; confirm the selected lens reaches the Admin feed. Then redeploy the Railway signaling relay from current `main` and re-run the remote create/join/push test.
+**As of commit:** `01a7a59` (code commit for the Admin delete/clear and Recorder lens-picker follow-up; later docs/APK metadata commits follow)
+**Blocker:** the deployed Railway relay runs pre-M4 code — Admin→Projector `push` fails in production until `services/signaling` is redeployed. Real-device verification of the new lens/quality/delete work is also pending. Some Android builds expose only one logical rear camera, so Ultra-wide is unavailable there regardless of app code. The APK uses CI debug-keystore signing; if v0.1.5 is already installed, Android may require uninstalling it before v0.1.6 installs.
 
 ## How to update this file
 
@@ -142,7 +142,8 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [ ] Full responsive Admin polish
 - [x] Web deploy workflow (GitHub Pages, auto on push to main)
 - [x] GitHub Actions Android APK workflow (`build-android.yml` — `assembleRelease` + debug keystore, triggers on `v*` tag or manual)
-- [x] APK v0.1.5 published to GitHub Releases — built from `d66f92a`; install and run the device-testing backlog checklist
+- [x] APK v0.1.6 published to GitHub Releases — built from `01a7a59`; install and run the lens/delete device checklist
+- [x] APK v0.1.5 published to GitHub Releases — previous build, superseded by v0.1.6
 - [x] APK v0.1.4 published to GitHub Releases — previous build, superseded by v0.1.5
 - [~] Smoke-test on physical Android device — app launches, camera shows, video transmits to Admin
 - [ ] iOS build (PWA via Pages is the personal-use path; EAS for wider distribution)
@@ -184,7 +185,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] `.npmrc` with fetch-retry hardening for CI
 - [x] iOS personal use: add GitHub Pages URL to Safari home screen as PWA
 - [x] Android APK CI: `assembleRelease` + debug-keystore signing; triggers on `v*` tag
-- [x] APK v0.1.5 live at `github.com/naveenmorla1901/omni-relay/releases/latest`
+- [x] APK v0.1.6 live at `github.com/naveenmorla1901/omni-relay/releases/latest`
 - [x] Download APK button on home screen links to latest release
 - [ ] Android keystore + signed release APK (for Play Store / wider distribution)
 
@@ -236,8 +237,8 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 
 ## Follow-up backlog (2026-10-20, second pass)
 
-- [~] Admin: delete individual pictures and clear the gallery for a clearer view. Per-capture Delete, per-thumbnail Delete, and Clear all are implemented with confirmation; needs browser test.
-- [~] Recorder: access wide-angle and high-quality lenses. Physical rear-lens picker implemented: Auto (4K preferred), Ultra-wide, Main · high quality, Telephoto, and numbered Android cameras when exposed; failed switches fall back to Auto. Needs Android/iOS device test.
+- [~] Admin: delete individual pictures and clear the gallery for a clearer view. Per-capture Delete, per-thumbnail Delete, and Clear all are implemented with confirmation; live web bundle verified, interactive browser test pending.
+- [~] Recorder: access wide-angle and high-quality lenses. Physical rear-lens picker implemented: Auto (4K preferred), Ultra-wide, Main · high quality, Telephoto, and numbered Android cameras when exposed; failed switches fall back to Auto. APK v0.1.6 is ready; needs Android/iOS device test.
 
 ## Session log
 
@@ -253,4 +254,5 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **2026-10-20** — Backlog recorded from device testing: Recorder quality, quad auto-detection reliability (incl. Re-lock re-trigger), auto-fit + auto camera settings, zoom fix, capture download button, flip mirroring on Admin, Projector drag-drop/paste input.
 - **2026-10-20** — Audit + backlog implementation: found and fixed the quad detector NMS bug (it deleted real corners and returned `null` on clean screens), added `quad.test.ts` synthetic regression tests, capped candidates at 10 with a 1.5 s detection budget, fixed the Re-lock redetect loop with a request-id guard, added the Download helper/button, replaced the static zoom modal with a 1–4× scrollable modal, wired front-camera mirror sync (`camera` message + `mirror` prop on both VideoViews), added auto-crop-on-detect with original-preserving gallery entries + Undo, and added the web Projector drop zone/file picker/paste image-or-code (with local preview and input-safe paste). Checks: typecheck, lint, 20 tests, web export all green.
 - **2026-10-20** — Pushed `b9f9354` (code) + `d66f92a` (docs); CI and Deploy web green. Tagged `v0.1.5`; the Android workflow built and published `ClearRelay-v0.1.5.apk` (135 MB). Railway relay redeploy still pending.
-- **2026-10-20** — Admin delete/clear + physical lens picker: added per-capture Delete, per-thumbnail Delete, and Clear all with a confirmation modal; deleting the active frame selects the next or clears the preview and cancels in-flight detection/crop. Added `src/camera/lenses.ts` + tests to classify iPhone/Android lens labels and a Recorder lens picker (Auto 4K preferred, Ultra-wide, Main · high quality, Telephoto, numbered Android cameras). Added `setFacingMode`/`deviceId` to camera settings, mapped native `facing`, avoided the web enumerateDevices probe while streaming, and fall back to Auto if a lens switch fails. Checks: typecheck, lint, 26 tests, web export green. Code commit `01a7a59`; APK/device test pending.
+- **2026-10-20** — Admin delete/clear + physical lens picker: added per-capture Delete, per-thumbnail Delete, and Clear all with a confirmation modal; deleting the active frame selects the next or clears the preview and cancels in-flight detection/crop. Added `src/camera/lenses.ts` + tests to classify iPhone/Android lens labels and a Recorder lens picker (Auto 4K preferred, Ultra-wide, Main · high quality, Telephoto, numbered Android cameras). Added `setFacingMode`/`deviceId` to camera settings, mapped native `facing`, avoided the web enumerateDevices probe while streaming, and fall back to Auto if a lens switch fails. Checks: typecheck, lint, 26 tests, web export green. Code commit `01a7a59`.
+- **2026-10-20** — Pushed `214e9a5` (docs); CI and Deploy web green. Live bundle verified to contain the new Admin Delete/Clear all and Recorder Camera lens / Auto 4K / Ultra-wide / high-quality UI. Tagged `v0.1.6` at `01a7a59`; the Android workflow built and published `ClearRelay-v0.1.6.apk` (135,044,026 bytes). Railway relay redeploy and real-device verification still pending.

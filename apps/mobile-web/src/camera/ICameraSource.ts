@@ -2,7 +2,7 @@ import type { CameraDevice, CameraFormat } from '@/camera/types';
 
 /**
  * Platform-neutral camera boundary (ClearRelay-Build-Plan.md §2.3).
- * Native uses Vision Camera; web uses getUserMedia. Shared code depends only on this.
+ * Native uses react-native-webrtc; web uses getUserMedia. Shared code depends only on this.
  */
 export interface ICameraSource {
   requestPermission(): Promise<boolean>;
