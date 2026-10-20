@@ -6,11 +6,11 @@
 > unless a decision is recorded below.
 
 **Last updated:** 2026-10-20
-**Current milestone:** M0–M5 complete (web + Android APK v0.1.5). Device-testing backlog implemented: 4K/detail camera tuning, robust quad detection, auto-fit with Undo, 1–4× zoom, capture Download, camera-flip mirror sync, Projector drag/drop + paste.
-**Current stop point:** All requested backlog items are implemented in code and the local checks are green (typecheck, lint, 20 unit tests, web export). The Admin capture now detects screens reliably in synthetic tests (the candidate NMS bug that made detection return null was fixed), auto-crops after a 450 ms preview by default, keeps the original in the gallery, and offers Undo. Download, 1–4× zoom, mirror sync, and Projector local input are wired. Web is deployed; APK v0.1.5 was built from `d66f92a` and published. Real-device verification is still pending.
-**Next action:** Install APK v0.1.5 on the Android Recorder and test with the web Admin: 4K/detail quality, detection on a real screen, auto-crop/Undo, Download, front-camera mirror, and Projector drag/drop/paste. Then redeploy the Railway signaling relay from current `main` and re-run the remote create/join/push test.
-**As of commit:** `d66f92a` (main; APK v0.1.5 built from this commit; later docs commits are metadata)
-**Blocker:** the deployed Railway relay runs pre-M4 code — Admin→Projector `push` fails in production until `services/signaling` is redeployed. Real-device verification of the new detection/quality work is also pending.
+**Current milestone:** M0–M5 complete (web + Android APK v0.1.5). Device-testing backlog implemented: 4K/detail camera tuning, robust quad detection, auto-fit with Undo, 1–4× zoom, capture Download, camera-flip mirror sync, Projector drag/drop + paste. Follow-up: Admin capture delete/clear and a Recorder physical rear-lens picker (Auto 4K, Ultra-wide, Main · high quality, Telephoto when exposed).
+**Current stop point:** All requested backlog items plus the Admin delete/clear and Recorder lens-picker follow-up are implemented, and local checks are green (typecheck, lint, 26 unit tests, web export). The Admin now has per-capture Delete, per-thumbnail Delete, and Clear all (with confirmation); deleting the active frame selects the next picture or clears the preview and cancels in-flight detection/crop. The Recorder lists rear lenses and can switch physical cameras when the platform exposes them; Auto requests the default rear lens at up to 4K, and a failed lens switch falls back to Auto. Web is deployed from the previous release; APK v0.1.5 is the latest published build. Real-device verification of the new lens/delete work is still pending.
+**Next action:** Test the new Admin delete/clear flow in the browser. Then install the next APK on the Android Recorder and compare Auto, Ultra-wide, and Main/high-quality lenses at close range; confirm the selected lens reaches the Admin feed. Then redeploy the Railway signaling relay from current `main` and re-run the remote create/join/push test.
+**As of commit:** `01a7a59` (code commit for the Admin delete/clear and Recorder lens-picker follow-up; docs follow)
+**Blocker:** the deployed Railway relay runs pre-M4 code — Admin→Projector `push` fails in production until `services/signaling` is redeployed. Real-device verification of the new lens/quality/delete work is also pending. Some Android builds expose only one logical rear camera, so Ultra-wide is unavailable there regardless of app code.
 
 ## How to update this file
 
@@ -58,6 +58,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] Auto exposure/focus/white-balance settle (`CAMERA_AUTO_SETTLE_MS`) before lock; best-effort lock on web/native
 - [x] Rear camera default (`facingMode: environment`)
 - [x] `flipCamera()`, `getActualSettings()`, `lockExposureFocusWhiteBalance()`; facing mode + mirror state sent to Admin over the data channel
+- [x] Physical rear-lens discovery + picker: Auto (4K preferred), Ultra-wide, Main · high quality, Telephoto, and numbered Android cameras. Web uses `enumerateDevices`/`deviceId`; native uses react-native-webrtc Camera2/AVFoundation devices. A failed lens switch falls back to Auto.
 - [x] Remote video track render in Admin (web `<video>` element via `onVideoElement` prop)
 - [x] Native local camera preview via `RTCView` in `video-view.tsx`
 - [x] Encoder params re-applied at WebRTC connected state (`maintain-resolution`, low FPS, high bitrate)
@@ -110,6 +111,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 
 - [~] Exposure/focus/white-balance lock — auto-adjust (`continuous`) then settle, then best-effort manual lock via `applyConstraints`; web/native support varies
 - [~] Recorder quality — 4K preferred, `contentHint='detail'`, encoder `maintain-resolution` + high bitrate; needs real-device verification
+- [~] Physical lens access — use Ultra-wide for a close screen and Main · high quality for maximum text clarity. Support depends on the phone/browser exposing physical lenses as separate devices; some Android builds merge them. Needs device verification.
 - [ ] Torch control and glare warning
 - [ ] Quality presets (Clarity / Balanced)
 - [ ] Anti-moiré and codec tests
@@ -162,6 +164,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] Admin: right pane (flex:1) explicit send-to-Projector controls
 - [x] Admin: session panel with room code display and per-device status chips
 - [x] Admin: gallery thumbnail strip (horizontal scroll, max 20 captures)
+- [x] Admin: per-capture Delete, per-thumbnail Delete, and Clear all with a confirmation modal. Deleting the active frame selects the next capture or clears the preview and cancels in-flight detection/crop.
 - [x] Admin: large captured image preview with rotate CCW/CW + 1–4× zoom
 - [x] Admin: Download, Detect again, Auto-crop toggle, Undo crop
 - [x] Admin: Image / Code tabs in send pane; send is explicit user action
@@ -207,6 +210,8 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **Download:** web-only anchor download of the active JPEG (`src/lib/download.web.ts`); native `Alert` fallback because Admin capture uses `HTMLVideoElement`/canvas and is effectively web-only today.
 - **Projector local input:** web-only drag/drop, file picker, and Ctrl+V image/code. Content stays in the browser tab (no upload). The paste listener ignores `INPUT`/`TEXTAREA`/contenteditable targets so it cannot hijack the room-code field. Native shows a web-only hint.
 - **Mirror sync:** Recorder sends `camera` with `facingMode` + `mirrored`; front camera (`facingMode='user'`) mirrors both the local Recorder preview and the Admin remote `<video>`/`RTCView`. Physical orientation sync (rotating the whole Admin view) is **not** implemented.
+- **Rear-lens selection:** the Recorder lists physical rear cameras via `enumerateDevices` and restarts the camera with the selected `deviceId`. Auto uses the default rear camera and keeps the 4K request. Lenses are classified from labels when possible (Ultra-wide / Main · high quality / Telephoto); numbered Android cameras are shown as `Rear camera N`. A failed switch restarts Auto. This cannot invent an ultra-wide lens if the OS/browser exposes only one rear camera.
+- **Admin delete/clear:** deletion is session-only and confirmed in a modal. Deleting the active capture selects the next one or clears the preview; in-flight detection/crop is cancelled. Clear all empties the 20-item gallery and resets the active preview. No upload or persistence.
 
 ## Open questions / decisions needed
 
@@ -215,6 +220,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [ ] Confirm end-to-end on real hardware across different networks.
 - [ ] Decide whether pairing PIN/session secret is needed for real access control.
 - [ ] Confirm flip semantics: current implementation mirrors the front camera on both Recorder and Admin. If "flip" meant rotating the Admin view when the phone is physically rotated to landscape, that orientation-sync feature is still missing.
+- [ ] On the physical Android test, note which numbered rear camera gives the widest view. If the OS exposes only one rear camera, Ultra-wide remains unavailable until we add a custom Camera2/Vision Camera native path.
 
 ## Requested backlog (2026-10-20, from device testing)
 
@@ -227,6 +233,11 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] Download after capture: visible Download button in the capture section; saves the active JPEG (web). Native shows a web-only hint.
 - [~] Flip mirroring: front-camera flip mirrors the Recorder preview and Admin remote view; `camera`/`redetect` protocol messages have tests. **Confirm whether mirroring (current) or physical orientation sync is what you meant.**
 - [x] Projector manual input: visible drop zone on the Projector page (even before joining), file picker, Ctrl+V image/code, local preview, and Show Admin content/Clear controls (web). Native shows a web-only hint.
+
+## Follow-up backlog (2026-10-20, second pass)
+
+- [~] Admin: delete individual pictures and clear the gallery for a clearer view. Per-capture Delete, per-thumbnail Delete, and Clear all are implemented with confirmation; needs browser test.
+- [~] Recorder: access wide-angle and high-quality lenses. Physical rear-lens picker implemented: Auto (4K preferred), Ultra-wide, Main · high quality, Telephoto, and numbered Android cameras when exposed; failed switches fall back to Auto. Needs Android/iOS device test.
 
 ## Session log
 
@@ -242,3 +253,4 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **2026-10-20** — Backlog recorded from device testing: Recorder quality, quad auto-detection reliability (incl. Re-lock re-trigger), auto-fit + auto camera settings, zoom fix, capture download button, flip mirroring on Admin, Projector drag-drop/paste input.
 - **2026-10-20** — Audit + backlog implementation: found and fixed the quad detector NMS bug (it deleted real corners and returned `null` on clean screens), added `quad.test.ts` synthetic regression tests, capped candidates at 10 with a 1.5 s detection budget, fixed the Re-lock redetect loop with a request-id guard, added the Download helper/button, replaced the static zoom modal with a 1–4× scrollable modal, wired front-camera mirror sync (`camera` message + `mirror` prop on both VideoViews), added auto-crop-on-detect with original-preserving gallery entries + Undo, and added the web Projector drop zone/file picker/paste image-or-code (with local preview and input-safe paste). Checks: typecheck, lint, 20 tests, web export all green.
 - **2026-10-20** — Pushed `b9f9354` (code) + `d66f92a` (docs); CI and Deploy web green. Tagged `v0.1.5`; the Android workflow built and published `ClearRelay-v0.1.5.apk` (135 MB). Railway relay redeploy still pending.
+- **2026-10-20** — Admin delete/clear + physical lens picker: added per-capture Delete, per-thumbnail Delete, and Clear all with a confirmation modal; deleting the active frame selects the next or clears the preview and cancels in-flight detection/crop. Added `src/camera/lenses.ts` + tests to classify iPhone/Android lens labels and a Recorder lens picker (Auto 4K preferred, Ultra-wide, Main · high quality, Telephoto, numbered Android cameras). Added `setFacingMode`/`deviceId` to camera settings, mapped native `facing`, avoided the web enumerateDevices probe while streaming, and fall back to Auto if a lens switch fails. Checks: typecheck, lint, 26 tests, web export green. Code commit `01a7a59`; APK/device test pending.

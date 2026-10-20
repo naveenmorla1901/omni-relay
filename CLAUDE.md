@@ -38,7 +38,7 @@ The single app lives in `apps/mobile-web/src/`:
 |------|---------|
 | `app/` | expo-router file-based routes: index, recorder, admin, projector, pair |
 | `connection/` | WebRTC abstraction — `IConnection`, `connection.web.ts` (browser), `connection.ts` (native), `signal-ws.ts` (WS signaling + push client) |
-| `camera/` | Camera abstraction — `ICameraSource`, `camera.web.ts` (getUserMedia), `camera.ts` (native react-native-webrtc) |
+| `camera/` | Camera abstraction — `ICameraSource`, `camera.web.ts` (getUserMedia), `camera.ts` (native react-native-webrtc), `lenses.ts` (physical rear-lens classification) |
 | `lib/cv.ts` | Web-only capture enhancement: contrast → unsharp mask → auto-levels → JPEG; `rotateImage()` |
 | `lib/quad.ts` | Web quad detection + perspective warp — `detectQuad`/`warpPerspective` on `ImageData`; overlay helpers use canvas |
 | `protocol/` | Wire protocol — `messages.ts` types + parse/serialize, `messages.test.ts` |
@@ -79,8 +79,8 @@ Canvas draws the live `<video>` at intrinsic resolution, then `enhanceCapture()`
 **Signaling server:** `wss://omni-relay-production-d45c.up.railway.app` (Railway, `services/signaling/`, PORT=8081)
 **Latest APK:** v0.1.5 on GitHub Releases (`assembleRelease`, debug-keystore signing)
 
-Completed: M0–M5 — scaffold, room-code pairing, live video, Admin capture gallery, Admin→Projector image push, pure-TS quad detection + perspective warp. APK v0.1.5 was built from `d66f92a` and published to GitHub Releases. The 2026-10-20 device-testing backlog is implemented in code: 4K/detail camera tuning, fixed quad candidate NMS + synthetic regression tests, Re-lock redetect, auto-crop with Undo, 1–4× zoom, capture Download, front-camera mirror sync, and web Projector drag/drop + paste image/code. Local checks are green (typecheck, lint, 20 tests, web export).
+Completed: M0–M5 — scaffold, room-code pairing, live video, Admin capture gallery, Admin→Projector image push, pure-TS quad detection + perspective warp. APK v0.1.5 was built from `d66f92a` and published to GitHub Releases. The 2026-10-20 device-testing backlog is implemented in code: 4K/detail camera tuning, fixed quad candidate NMS + synthetic regression tests, Re-lock redetect, auto-crop with Undo, 1–4× zoom, capture Download, front-camera mirror sync, and web Projector drag/drop + paste image/code. Follow-up work adds Admin per-capture Delete / per-thumbnail Delete / Clear all with confirmation, and a Recorder physical rear-lens picker (Auto 4K preferred, Ultra-wide, Main · high quality, Telephoto, numbered Android cameras; failed switches fall back to Auto). Local checks are green (typecheck, lint, 26 tests, web export).
 
-Known issues: the deployed Railway relay runs pre-M4 code — Admin→Projector `push` fails in production until `services/signaling` is redeployed. The new camera quality/detection/zoom work still needs real-device verification.
+Known issues: the deployed Railway relay runs pre-M4 code — Admin→Projector `push` fails in production until `services/signaling` is redeployed. The camera quality/detection/zoom/delete/lens work still needs real-device verification. Some Android builds expose only one logical rear camera, so Ultra-wide is not available there.
 
-Next: install APK v0.1.5 and device-test the backlog, redeploy the relay, then the M5 remainder (CLAHE, raw-frame fallback) or M6 camera tuning.
+Next: browser-test Admin delete/clear, install the next APK to compare Auto vs. Ultra-wide vs. Main/high-quality lenses on a close screen, redeploy the relay, then the M5 remainder (CLAHE, raw-frame fallback) or M6 camera tuning.
