@@ -1,3 +1,5 @@
+import { CONFIG } from '@/config';
+
 import type { CameraDevice } from './types';
 
 /**
@@ -49,6 +51,11 @@ export function lensKindLabel(kind: CameraLensKind): string {
     default:
       return 'Rear camera';
   }
+}
+
+/** True when a stream has enough pixels to preserve small photographed text. */
+export function isTextQualityResolution(width: number, height: number): boolean {
+  return width > 0 && height > 0 && width * height >= CONFIG.CAMERA_TEXT_MIN_PIXELS;
 }
 
 /** Human label for a lens, using the platform name when it is not classifiable. */

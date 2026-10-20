@@ -12,7 +12,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { createCameraSource } from '@/camera';
 import type { CameraDevice, ICameraSource } from '@/camera';
-import { buildLensOptions } from '@/camera/lenses';
+import { buildLensOptions, isTextQualityResolution } from '@/camera/lenses';
 import { AccessBoundary } from '@/components/access-boundary';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
@@ -120,6 +120,18 @@ function RecorderWorkspace() {
         height: CONFIG.CAPTURE_RESOLUTION.height,
         fps: CONFIG.TARGET_FPS,
       });
+      const actual = camera.getActualSettings();
+      if (
+        nextDeviceId &&
+        actual &&
+        actual.width > 0 &&
+        actual.height > 0 &&
+        !isTextQualityResolution(actual.width, actual.height)
+      ) {
+        throw new Error(
+          `This lens only delivered ${actual.width}×${actual.height}, below the 1080p text floor.`,
+        );
+      }
       attachCameraStream(camera);
       setSelectedDeviceId(nextDeviceId);
       await refreshCameras(camera);
@@ -140,6 +152,9 @@ function RecorderWorkspace() {
         attachCameraStream(camera);
         setSelectedDeviceId('');
         await refreshCameras(camera);
+        await camera.autoAdjustForDocument();
+        await new Promise((r) => setTimeout(r, CONFIG.CAMERA_AUTO_SETTLE_MS));
+        await camera.lockExposureFocusWhiteBalance();
         setCameraError(`${selectedError} Switched back to Auto.`);
       } catch (fallbackErr) {
         setCameraError(cameraErrMsg(fallbackErr));
@@ -220,6 +235,9 @@ function RecorderWorkspace() {
   const selectedLensOption = lensOptions.find((option) => option.device.id === selectedDeviceId);
   const actualLensOption = lensOptions.find((option) => option.device.id === cameraSettings?.deviceId);
   const autoLensActive = selectedDeviceId === '' && cameraSettings?.facingMode !== 'user';
+  const lowResolution = Boolean(
+    cameraSettings && !isTextQualityResolution(cameraSettings.width, cameraSettings.height),
+  );
   const currentLensLabel = cameraSettings?.facingMode === 'user'
     ? 'Front camera'
     : selectedLensOption?.label ?? (actualLensOption ? `Auto · ${actualLensOption.label}` : 'Auto · best rear');
@@ -326,9 +344,20 @@ function RecorderWorkspace() {
                 </View>
 
                 {cameraSettings && (
-                  <ThemedText type="code" themeColor="textSecondary" style={{ fontSize: 12 }}>
+                  <ThemedText
+                    type="code"
+                    style={{ fontSize: 12, color: lowResolution ? theme.danger : theme.textSecondary }}>
                     {cameraSettings.width}×{cameraSettings.height} · {cameraSettings.fps} fps · {currentLensLabel}
                   </ThemedText>
+                )}
+
+                {lowResolution && (
+                  <View style={[styles.errorBox, { borderColor: theme.danger }]}>
+                    <ThemedText type="small" style={{ color: theme.danger }}>
+                      This stream is below 1080p, so small text may be unreadable. Use Auto/Main at up to 4K,
+                      move closer, or accept a wider but softer shot.
+                    </ThemedText>
+                  </View>
                 )}
 
                 {localStream && (
@@ -383,8 +412,8 @@ function RecorderWorkspace() {
                     </ScrollView>
                     <ThemedText type="small" themeColor="textSecondary" style={styles.lensHint}>
                       {lensOptions.length === 0
-                        ? 'This device reports one rear camera. Ultra-wide appears only when the phone or browser exposes it separately.'
-                        : 'Auto uses the default rear lens at up to 4K. Choose Main · high quality when listed, or Ultra-wide for a close-up screen; some Android builds merge physical lenses.'}
+                        ? 'This device reports one rear camera. Auto stays at the highest resolution; Ultra-wide appears only when the phone or browser exposes it separately.'
+                        : 'For text, use Auto or Main · high quality at up to 4K. Lenses below 1080p switch back to Auto to protect clarity; ultra-wide usually has fewer pixels.'}
                     </ThemedText>
                   </View>
                 )}

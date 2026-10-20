@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
@@ -15,10 +15,10 @@ type VideoViewProps = {
 export function VideoView({ stream, placeholder = 'No video yet', mirror = false, onVideoElement }: VideoViewProps) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
 
-  const setRef = (el: HTMLVideoElement | null) => {
+  const setRef = useCallback((el: HTMLVideoElement | null) => {
     videoRef.current = el;
     onVideoElement?.(el);
-  };
+  }, [onVideoElement]);
 
   useEffect(() => {
     const video = videoRef.current;

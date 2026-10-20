@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildLensOptions, classifyCameraLens } from './lenses';
+import { buildLensOptions, classifyCameraLens, isTextQualityResolution } from './lenses';
 import type { CameraDevice } from './types';
 
 function device(
@@ -66,5 +66,15 @@ describe('buildLensOptions', () => {
     ]);
 
     expect(options.map((option) => option.label)).toEqual(['Rear camera 0', 'Rear camera 2']);
+  });
+});
+
+describe('isTextQualityResolution', () => {
+  it('accepts 1080p and 4K streams but rejects 720p', () => {
+    expect(isTextQualityResolution(1920, 1080)).toBe(true);
+    expect(isTextQualityResolution(2160, 3840)).toBe(true);
+    expect(isTextQualityResolution(720, 1280)).toBe(false);
+    expect(isTextQualityResolution(528, 960)).toBe(false);
+    expect(isTextQualityResolution(0, 0)).toBe(false);
   });
 });

@@ -17,11 +17,12 @@ import { AccessBoundary } from '@/components/access-boundary';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { VideoView } from '@/components/video-view';
+import { isTextQualityResolution } from '@/camera/lenses';
 import { CONFIG } from '@/config';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { usePairing } from '@/hooks/use-pairing';
 import { useTheme } from '@/hooks/use-theme';
-import { enhanceCapture, rotateImage } from '@/lib/cv';
+import { captureAndEnhanceVideo, rotateImage } from '@/lib/cv';
 import { detectAndOverlay, smoothQuad, warpAndCrop } from '@/lib/quad';
 import type { QuadCorners } from '@/lib/quad';
 import { downloadCapture } from '@/lib/download';
@@ -47,15 +48,14 @@ export default function AdminScreen() {
   );
 }
 
-function captureFromVideo(video: HTMLVideoElement): CapturedFrame | null {
-  const dataUrl = enhanceCapture(video);
-  if (!dataUrl) return null;
+async function captureFromVideo(video: HTMLVideoElement): Promise<CapturedFrame | null> {
+  const capture = await captureAndEnhanceVideo(video);
+  if (!capture) return null;
+  const now = Date.now();
   return {
-    id: String(Date.now()),
-    ts: Date.now(),
-    dataUrl,
-    width: video.videoWidth,
-    height: video.videoHeight,
+    id: String(now),
+    ts: now,
+    ...capture,
   };
 }
 
@@ -69,6 +69,7 @@ function AdminWorkspace() {
   const [language, setLanguage] = useState('');
   const [gallery, setGallery] = useState<CapturedFrame[]>([]);
   const [activeCapture, setActiveCapture] = useState<CapturedFrame | null>(null);
+  const [captureBusy, setCaptureBusy] = useState(false);
   const [sendStatus, setSendStatus] = useState<string | null>(null);
   const [zoomVisible, setZoomVisible] = useState(false);
   const [detectedCorners, setDetectedCorners] = useState<QuadCorners | null>(null);
@@ -81,6 +82,9 @@ function AdminWorkspace() {
   const [wasCropped, setWasCropped] = useState(false);
   const [deletePrompt, setDeletePrompt] = useState<DeletePrompt | null>(null);
   const videoElementRef = useRef<HTMLVideoElement | null>(null);
+  const [videoElement, setVideoElement] = useState<HTMLVideoElement | null>(null);
+  const [remoteResolution, setRemoteResolution] = useState<{ width: number; height: number } | null>(null);
+  const captureInFlightRef = useRef(false);
   const previousQuadRef = useRef<QuadCorners | null>(null);
   const lastRedetectRef = useRef(0);
   const detectionIdRef = useRef(0);
@@ -88,6 +92,38 @@ function AdminWorkspace() {
   const wide = width >= 1000;
   const recorderLive = pairing.phase === 'connected';
   const projectorReady = pairing.projectorJoined;
+  const remoteLowResolution = Boolean(
+    remoteResolution && !isTextQualityResolution(remoteResolution.width, remoteResolution.height),
+  );
+
+  const attachVideoElement = useCallback((el: HTMLVideoElement | null) => {
+    videoElementRef.current = el;
+    setVideoElement((current) => (current === el ? current : el));
+    if (!el) {
+      setRemoteResolution(null);
+      return;
+    }
+    if (el.videoWidth > 0 && el.videoHeight > 0) {
+      setRemoteResolution({ width: el.videoWidth, height: el.videoHeight });
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!videoElement) return;
+
+    const updateResolution = () => {
+      if (videoElement.videoWidth > 0 && videoElement.videoHeight > 0) {
+        setRemoteResolution({ width: videoElement.videoWidth, height: videoElement.videoHeight });
+      }
+    };
+
+    videoElement.addEventListener('loadedmetadata', updateResolution);
+    videoElement.addEventListener('resize', updateResolution);
+    return () => {
+      videoElement.removeEventListener('loadedmetadata', updateResolution);
+      videoElement.removeEventListener('resize', updateResolution);
+    };
+  }, [videoElement]);
 
   const detectCapture = useCallback((frame: CapturedFrame) => {
     const requestId = ++detectionIdRef.current;
@@ -114,20 +150,30 @@ function AdminWorkspace() {
     });
   }, []);
 
-  const captureStill = useCallback(() => {
+  const captureStill = useCallback(async () => {
     const video = videoElementRef.current;
-    if (!video) return;
-    const frame = captureFromVideo(video);
-    if (!frame) return;
-    setGallery((prev) => [frame, ...prev].slice(0, 20));
-    setActiveCapture(frame);
-    setSendStatus(null);
-    setDownloadStatus(null);
-    cropIdRef.current++;
-    setPreCrop(null);
-    setWasCropped(false);
-    previousQuadRef.current = null;
-    detectCapture(frame);
+    if (!video || captureInFlightRef.current) return;
+
+    captureInFlightRef.current = true;
+    setCaptureBusy(true);
+    try {
+      const frame = await captureFromVideo(video);
+      if (!frame) return;
+      setGallery((prev) => [frame, ...prev].slice(0, 20));
+      setActiveCapture(frame);
+      setSendStatus(null);
+      setDownloadStatus(null);
+      cropIdRef.current++;
+      setPreCrop(null);
+      setWasCropped(false);
+      previousQuadRef.current = null;
+      detectCapture(frame);
+    } catch (error) {
+      console.warn('Could not capture still.', error);
+    } finally {
+      captureInFlightRef.current = false;
+      setCaptureBusy(false);
+    }
   }, [detectCapture]);
 
   const downloadActive = useCallback(() => {
@@ -410,19 +456,35 @@ function AdminWorkspace() {
                       stream={pairing.remoteStream}
                       placeholder="Waiting for camera…"
                       mirror={pairing.remoteCameraMirrored}
-                      onVideoElement={(el) => { videoElementRef.current = el as HTMLVideoElement | null; }}
+                      onVideoElement={attachVideoElement}
                     />
                   </View>
+
+                  {remoteLowResolution && remoteResolution && (
+                    <View style={[styles.errorBox, { borderColor: theme.danger }]}>
+                      <ThemedText type="small" style={{ color: theme.danger }}>
+                        The Recorder stream is only {remoteResolution.width}×{remoteResolution.height}. Small text
+                        may be unreadable; ask the Recorder to use Auto/Main at up to 4K or move closer.
+                      </ThemedText>
+                    </View>
+                  )}
 
                   <View style={styles.row}>
                     <Pressable
                       accessibilityRole="button"
-                      onPress={captureStill}
+                      accessibilityLabel={captureBusy ? 'Capturing sharpest frame' : 'Capture still'}
+                      disabled={captureBusy}
+                      onPress={() => { void captureStill(); }}
                       style={({ pressed }) => [
                         styles.primaryBtn,
-                        { backgroundColor: theme.accent, opacity: pressed ? 0.8 : 1 },
+                        {
+                          backgroundColor: theme.accent,
+                          opacity: captureBusy ? 0.55 : pressed ? 0.8 : 1,
+                        },
                       ]}>
-                      <ThemedText type="smallBold" style={{ color: theme.accentText }}>Capture still</ThemedText>
+                      <ThemedText type="smallBold" style={{ color: theme.accentText }}>
+                        {captureBusy ? 'Capturing…' : 'Capture still'}
+                      </ThemedText>
                     </Pressable>
                     {gallery.length > 0 && (
                       <ThemedText type="small" themeColor="textSecondary">
@@ -430,6 +492,10 @@ function AdminWorkspace() {
                       </ThemedText>
                     )}
                   </View>
+
+                  <ThemedText type="small" themeColor="textSecondary" style={{ fontSize: 11 }}>
+                    Best of {CONFIG.CAPTURE_SAMPLE_COUNT} live frames · adaptive contrast · edge enhancement
+                  </ThemedText>
 
                   {gallery.length > 0 && (
                     <View style={[styles.galleryWrap, { borderColor: theme.border }]}>

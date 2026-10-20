@@ -94,7 +94,10 @@ class NativeConnection implements IConnection {
 
   attachVideoTrack(track: MediaStreamTrack): void {
     if (this.videoSender) {
-      void this.videoSender.replaceTrack(track);
+      void this.videoSender
+        .replaceTrack(track)
+        .then(() => this.applyEncoderParams())
+        .catch((error: unknown) => console.warn('Could not attach the camera track.', error));
     } else {
       this.pc?.addTrack(track);
     }
@@ -157,6 +160,7 @@ class NativeConnection implements IConnection {
     try {
       const params = sender.getParameters();
       const [first] = params.encodings?.length > 0 ? params.encodings : [{}];
+      params.degradationPreference = CONFIG.DEGRADATION;
       params.encodings = [{
         ...first,
         maxFramerate: CONFIG.TARGET_FPS,

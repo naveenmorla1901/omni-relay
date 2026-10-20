@@ -1,113 +1,154 @@
 /**
- * Web-only image enhancement utilities.
+ * Web-only capture and image enhancement utilities.
  * Uses Canvas + ImageData — never import this from native code.
  *
- * Pipeline: contrast boost → unsharp mask → percentile auto-levels → JPEG output
+ * Pipeline: sharpest live frame → contrast/brightness → auto-levels →
+ * CLAHE local contrast → luma-only unsharp mask → JPEG output
  */
+
+import { CONFIG } from '@/config';
+import {
+  applyAutoLevels,
+  applyClahe,
+  applyLumaUnsharp,
+  scoreSharpness,
+} from '@/lib/image-quality';
+
+export type EnhancedCapture = {
+  dataUrl: string;
+  width: number;
+  height: number;
+};
 
 /**
- * Capture and enhance a video frame for maximum text clarity.
- * Returns a JPEG data-URL or null if the video has no dimensions yet.
+ * Capture several live frames, keep the sharpest, then enhance it for text.
+ * Returns null while the video has no usable dimensions.
  */
-export function enhanceCapture(video: HTMLVideoElement): string | null {
-  const w = video.videoWidth;
-  const h = video.videoHeight;
-  if (!w || !h) return null;
+export async function captureAndEnhanceVideo(
+  video: HTMLVideoElement,
+): Promise<EnhancedCapture | null> {
+  const bestFrame = await captureSharpestFrame(video);
+  if (!bestFrame) return null;
 
-  // Canvas A: draw with initial contrast/brightness boost
-  const canvas = document.createElement('canvas');
-  canvas.width = w;
-  canvas.height = h;
-  const ctx = canvas.getContext('2d', { willReadFrequently: true });
-  if (!ctx) return null;
-  setFilter(ctx, 'contrast(1.25) brightness(1.05)');
-  ctx.drawImage(video, 0, 0);
-  setFilter(ctx, 'none');
+  const dataUrl = enhanceCanvas(bestFrame);
+  if (!dataUrl) return null;
 
-  // Canvas B: blurred copy for unsharp mask reference
-  const blurCanvas = document.createElement('canvas');
-  blurCanvas.width = w;
-  blurCanvas.height = h;
-  const blurCtx = blurCanvas.getContext('2d', { willReadFrequently: true });
-  if (!blurCtx) return null;
-  setFilter(blurCtx, 'blur(1.5px)');
-  blurCtx.drawImage(video, 0, 0);
-
-  const origData = ctx.getImageData(0, 0, w, h);
-  const blurData = blurCtx.getImageData(0, 0, w, h);
-
-  applyUnsharpMask(origData.data, blurData.data, 1.8);
-  applyAutoLevels(origData.data, w * h);
-
-  ctx.putImageData(origData, 0, 0);
-  return canvas.toDataURL('image/jpeg', 0.97);
+  return { dataUrl, width: bestFrame.width, height: bestFrame.height };
 }
 
-// ── Internals ────────────────────────────────────────────────────────────────
+async function captureSharpestFrame(video: HTMLVideoElement): Promise<HTMLCanvasElement | null> {
+  const width = video.videoWidth;
+  const height = video.videoHeight;
+  if (!width || !height) return null;
 
-function setFilter(ctx: CanvasRenderingContext2D, value: string): void {
-  if ('filter' in ctx) (ctx as CanvasRenderingContext2D & { filter: string }).filter = value;
-}
+  const bestCanvas = document.createElement('canvas');
+  bestCanvas.width = width;
+  bestCanvas.height = height;
+  const bestContext = bestCanvas.getContext('2d');
+  if (!bestContext) return null;
 
-function applyUnsharpMask(
-  data: Uint8ClampedArray,
-  blur: Uint8ClampedArray,
-  amount: number,
-): void {
-  for (let i = 0; i < data.length; i += 4) {
-    data[i]   = clamp(data[i]   + amount * (data[i]   - blur[i]));
-    data[i + 1] = clamp(data[i + 1] + amount * (data[i + 1] - blur[i + 1]));
-    data[i + 2] = clamp(data[i + 2] + amount * (data[i + 2] - blur[i + 2]));
-    // alpha unchanged
-  }
-}
+  // Score a downscaled copy: this is cheap and suppresses sensor/moiré noise.
+  const scoreWidth = Math.min(480, width);
+  const scoreHeight = Math.max(1, Math.round((height * scoreWidth) / width));
+  const scoreCanvas = document.createElement('canvas');
+  scoreCanvas.width = scoreWidth;
+  scoreCanvas.height = scoreHeight;
+  const scoreContext = scoreCanvas.getContext('2d', { willReadFrequently: true });
+  if (!scoreContext) return null;
 
-function applyAutoLevels(data: Uint8ClampedArray, pixelCount: number): void {
-  const rH = new Uint32Array(256);
-  const gH = new Uint32Array(256);
-  const bH = new Uint32Array(256);
+  let bestScore = -1;
+  for (let sample = 0; sample < CONFIG.CAPTURE_SAMPLE_COUNT; sample++) {
+    await waitForVideoFrame(video);
+    scoreContext.drawImage(video, 0, 0, scoreWidth, scoreHeight);
+    const scoreData = scoreContext.getImageData(0, 0, scoreWidth, scoreHeight);
+    const score = scoreSharpness(scoreData.data, scoreWidth, scoreHeight);
 
-  for (let i = 0; i < data.length; i += 4) {
-    rH[data[i]]++;
-    gH[data[i + 1]]++;
-    bH[data[i + 2]]++;
-  }
-
-  // Clip 0.5 % at each tail to avoid single-pixel outliers dominating the stretch
-  const clip = Math.max(1, Math.round(pixelCount * 0.005));
-  const rLo = findClip(rH, clip, false), rHi = findClip(rH, clip, true);
-  const gLo = findClip(gH, clip, false), gHi = findClip(gH, clip, true);
-  const bLo = findClip(bH, clip, false), bHi = findClip(bH, clip, true);
-
-  const rR = rHi - rLo || 1;
-  const gR = gHi - gLo || 1;
-  const bR = bHi - bLo || 1;
-
-  for (let i = 0; i < data.length; i += 4) {
-    data[i]   = clamp(((data[i]   - rLo) / rR) * 255);
-    data[i + 1] = clamp(((data[i + 1] - gLo) / gR) * 255);
-    data[i + 2] = clamp(((data[i + 2] - bLo) / bR) * 255);
-  }
-}
-
-function findClip(hist: Uint32Array, threshold: number, fromEnd: boolean): number {
-  let count = 0;
-  if (fromEnd) {
-    for (let i = 255; i >= 0; i--) {
-      count += hist[i];
-      if (count >= threshold) return i;
+    if (score > bestScore) {
+      bestScore = score;
+      // Re-draw at native resolution only when this frame is the new best.
+      bestContext.drawImage(video, 0, 0, width, height);
     }
-    return 255;
   }
-  for (let i = 0; i < 256; i++) {
-    count += hist[i];
-    if (count >= threshold) return i;
-  }
-  return 0;
+
+  return bestScore >= 0 ? bestCanvas : null;
 }
 
-function clamp(v: number): number {
-  return v < 0 ? 0 : v > 255 ? 255 : Math.round(v);
+function waitForVideoFrame(video: HTMLVideoElement): Promise<void> {
+  return new Promise((resolve) => {
+    const callbackVideo = video as unknown as {
+      requestVideoFrameCallback?: (callback: () => void) => number;
+      cancelVideoFrameCallback?: (handle: number) => void;
+    };
+    let settled = false;
+    let callbackId: number | null = null;
+
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (callbackId !== null) callbackVideo.cancelVideoFrameCallback?.(callbackId);
+      resolve();
+    };
+
+    const timeout = setTimeout(finish, CONFIG.CAPTURE_FRAME_TIMEOUT_MS);
+    if (callbackVideo.requestVideoFrameCallback) {
+      callbackId = callbackVideo.requestVideoFrameCallback(finish);
+    }
+  });
+}
+
+function enhanceCanvas(source: HTMLCanvasElement): string | null {
+  const width = source.width;
+  const height = source.height;
+  if (!width || !height) return null;
+
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext('2d', { willReadFrequently: true });
+  if (!context) return null;
+
+  setFilter(
+    context,
+    `contrast(${CONFIG.CAPTURE_CONTRAST}) brightness(${CONFIG.CAPTURE_BRIGHTNESS})`,
+  );
+  context.drawImage(source, 0, 0);
+  setFilter(context, 'none');
+
+  const imageData = context.getImageData(0, 0, width, height);
+  applyAutoLevels(imageData.data, width * height);
+  applyClahe(imageData.data, width, height, {
+    tiles: CONFIG.CAPTURE_CLAHE_TILES,
+    clipLimit: CONFIG.CAPTURE_CLAHE_CLIP_LIMIT,
+    strength: CONFIG.CAPTURE_CLAHE_STRENGTH,
+  });
+  context.putImageData(imageData, 0, 0);
+
+  // Blur the already-leveled frame so the unsharp mask only adds real edges.
+  const blurCanvas = document.createElement('canvas');
+  blurCanvas.width = width;
+  blurCanvas.height = height;
+  const blurContext = blurCanvas.getContext('2d', { willReadFrequently: true });
+  if (!blurContext) return null;
+  setFilter(blurContext, `blur(${CONFIG.CAPTURE_UNSHARP_BLUR_PX}px)`);
+  blurContext.drawImage(canvas, 0, 0);
+
+  const blurData = blurContext.getImageData(0, 0, width, height);
+  applyLumaUnsharp(
+    imageData.data,
+    blurData.data,
+    CONFIG.CAPTURE_UNSHARP_AMOUNT,
+    CONFIG.CAPTURE_UNSHARP_THRESHOLD,
+  );
+  context.putImageData(imageData, 0, 0);
+
+  return canvas.toDataURL('image/jpeg', CONFIG.CAPTURE_JPEG_QUALITY);
+}
+
+function setFilter(context: CanvasRenderingContext2D, value: string): void {
+  if ('filter' in context) {
+    (context as CanvasRenderingContext2D & { filter: string }).filter = value;
+  }
 }
 
 /** Rotate a JPEG data-URL by clockwise degrees (90 or -90/270). Returns a new data-URL. */
@@ -120,11 +161,11 @@ export function rotateImage(dataUrl: string, cwDegrees: 90 | 180 | 270 | -90): P
       const canvas = document.createElement('canvas');
       canvas.width = swap ? img.height : img.width;
       canvas.height = swap ? img.width : img.height;
-      const ctx = canvas.getContext('2d')!;
-      ctx.translate(canvas.width / 2, canvas.height / 2);
-      ctx.rotate((deg * Math.PI) / 180);
-      ctx.drawImage(img, -img.width / 2, -img.height / 2);
-      resolve(canvas.toDataURL('image/jpeg', 0.97));
+      const context = canvas.getContext('2d')!;
+      context.translate(canvas.width / 2, canvas.height / 2);
+      context.rotate((deg * Math.PI) / 180);
+      context.drawImage(img, -img.width / 2, -img.height / 2);
+      resolve(canvas.toDataURL('image/jpeg', CONFIG.CAPTURE_JPEG_QUALITY));
     };
     img.src = dataUrl;
   });
