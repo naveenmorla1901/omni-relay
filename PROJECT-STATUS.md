@@ -193,9 +193,19 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 ## Open questions / decisions needed
 
 - [ ] TURN server needed for cross-carrier NAT (Recorder on mobile data + Admin on WiFi may fail ICE).
-- [ ] M5 OpenCV.js: load as a web worker to avoid blocking the main thread (~8 MB WASM).
+- [x] M5 quad detection: shipped pure-TS in `src/lib/quad.ts` — no OpenCV.js/WASM needed.
 - [ ] Confirm end-to-end on real hardware across different networks.
 - [ ] Decide whether pairing PIN/session secret is needed for real access control.
+
+## Requested backlog (2026-10-20, from device testing)
+
+- [ ] Recorder video quality: live feed still not clear enough for text — tune resolution/FPS/bitrate/encoder params and focus/exposure/white balance (web + native).
+- [ ] Quad auto-detection reliability: blue overlay often missing on captures; clicking "Re-lock" should also re-trigger detection/auto-fit.
+- [ ] Auto-fit: once a screen/document is detected, warp it into one flat frame automatically and adjust camera settings (exposure/focus/WB) automatically.
+- [ ] Zoom: captured-image zoom modal / camera zoom doesn't zoom properly; source image is clear enough to zoom into.
+- [ ] Download after capture: visible Download button on every Admin capture so the JPEG can be saved and inspected.
+- [ ] Flip mirroring: when Recorder flips/switches camera, Admin's remote view must flip the same way (no mirrored text).
+- [ ] Projector manual input: drag & drop image files from folders + paste (Ctrl+V) an image or code, with clearly visible UI affordances.
 
 ## Session log
 
@@ -208,3 +218,4 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **2026-10-20** — Android APK fixes: CI permissions (`contents: write`), `setup-java@v5`, removed `expo-dev-client` (dev launcher), removed unused native packages (`react-native-worklets` etc. causing silent startup crash), switched `assembleDebug` → `assembleRelease` + debug-keystore signing (debug builds don't embed JS bundle). APK v0.1.4 runs on device.
 - **2026-10-20** — Native camera preview, admin redesign: `video-view.tsx` now renders `RTCView` for local stream on Android. Admin left pane wider (flex:2), capture stays in left pane (not auto-sent to right), rotate CCW/CW buttons, zoom modal. Camera tries 4K first. `rotateImage()` added to cv.ts.
 - **2026-10-20** — M5 quad detection + perspective warp: `src/lib/quad.ts` — pure-TS, no OpenCV.js. Pipeline: grayscale → blur5x5 → Sobel → Otsu → diagonal corner projection → convexity validation → DLT homography → bilinear warp. Admin shows blue quad overlay after capture; "Auto-crop" button warps to flat rectangle.
+- **2026-10-20** — Backlog recorded from device testing: Recorder quality, quad auto-detection reliability (incl. Re-lock re-trigger), auto-fit + auto camera settings, zoom fix, capture download button, flip mirroring on Admin, Projector drag-drop/paste input.
