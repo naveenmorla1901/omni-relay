@@ -2,7 +2,7 @@
 
 ClearRelay is a greenfield Expo + WebRTC app. `ClearRelay-Build-Plan.md` is the canonical spec: read §1–5, §11, and §21 before architectural work. Build in M0→M9 order (§15) and keep each milestone demoable.
 
-**Current state:** M1–M4 web + M8 signaling are done. All three roles connect via 6-char room codes through a Railway WebSocket relay (`wss://omni-relay-production-d45c.up.railway.app`). Admin shows live feed from Recorder, captures enhanced stills (unsharp mask + auto-levels), and can push them to Projector full-screen via the WS relay. Projector displays the last pushed image. CV pipeline lives in `src/lib/cv.ts`. Native `IConnection`/`ICameraSource` are implemented via `react-native-webrtc`. Android APK CI workflow is ready (push a `v*` tag to build). iOS personal use via PWA (GitHub Pages → Safari → Add to Home Screen). M5 (OpenCV.js quad detection + perspective warp) is next.
+**Current state:** M1–M5 complete (web + Android APK v0.1.4). All three roles connect via 6-char room codes through the Railway WebSocket relay. Admin captures enhanced stills (unsharp mask + auto-levels in `src/lib/cv.ts`), detects and perspective-warps document quads in pure TS (`src/lib/quad.ts`, no OpenCV.js), and pushes images to the Projector full-screen via the WS relay. Native `IConnection`/`ICameraSource` use `react-native-webrtc`; `assembleRelease` APKs are published to GitHub Releases. Known blocker: the deployed Railway relay still runs pre-`push` code, so Admin→Projector push fails in production until `services/signaling` is redeployed. Next: test auto-crop on device, then the M5 remainder (CLAHE, EMA quad smoothing, raw-frame fallback) or M6 camera tuning. iOS personal use via PWA (GitHub Pages → Safari → Add to Home Screen).
 
 **Progress tracking:** `PROJECT-STATUS.md` is the live checklist and stop point. At the end of every working session, update its checkboxes, current stop point, next action, and session log. Do not let it drift from the code.
 
@@ -47,8 +47,16 @@ npm run export:web     # static export to apps/mobile-web/dist
 
 ## Scope guardrails
 
-- No central media server, database, auth, or persistence. The optional signaling helper only forwards SDP/ICE, never media, and belongs in `services/signaling` (M8, not built).
+- No central media server, database, auth, or persistence. The signaling helper (`services/signaling`, live on Railway) forwards SDP/ICE and Admin→Projector image pushes only; live media stays P2P.
 - v1 is one Recorder→one Admin and one Admin→one Projector. Multi-projector, Admin→Recorder hints, and media recording are out of scope.
 - Distribution target: static web export on GitHub Pages and a signed APK on GitHub Releases. Do not introduce EAS cloud or a hosted media server as a requirement.
 - Work one backlog item from plan §16 at a time. If a genuine product decision blocks progress, ask instead of inventing scope.
 - Update the current-state line above and the plan's roadmap when a milestone lands.
+
+## Working with other agents
+
+- One agent per working tree. For parallel work, create a separate `git worktree`; never run two agents in this checkout.
+- Start every session by reading `PROJECT-STATUS.md` and comparing its **As of commit** to `git log`. If the notes and the code disagree, the code wins — fix the note.
+- If `git status` shows changes you did not make, stop and ask before editing.
+- Commit in small, logical chunks and push before switching agents. Uncommitted work never crosses machines.
+- End every session by updating `PROJECT-STATUS.md`: current stop point, next action, session log, and the new **As of commit**.

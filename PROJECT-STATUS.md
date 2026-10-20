@@ -9,6 +9,8 @@
 **Current milestone:** M1–M4 complete (web + Android APK). M5 CV pipeline complete (unsharp mask + auto-levels + quad detection + perspective warp). Android APK v0.1.4 runs on device.
 **Current stop point:** Three-device session works end-to-end. After each capture, Admin auto-detects the document/screen quad (blue overlay shown), "Auto-crop" button warps perspective to a flat rectangle. Pure-TS implementation (no OpenCV.js needed) — grayscale → blur → Sobel → Otsu → diagonal corner projection → DLT homography → bilinear warp.
 **Next action:** Test auto-crop on device; optionally add CLAHE adaptive contrast (M5 remainder) or move to M6 camera tuning.
+**As of commit:** `a59d1ba` (main, clean tree)
+**Blocker:** the deployed Railway relay runs pre-M4 code — Admin→Projector `push` fails in production until `services/signaling` is redeployed.
 
 ## How to update this file
 

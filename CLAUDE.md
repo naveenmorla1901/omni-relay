@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository. Cross-tool conventions live in `AGENTS.md`; project progress lives in `PROJECT-STATUS.md`.
 
 ## Commands
 
@@ -22,12 +22,12 @@ Node 22.13+ required (see `.nvmrc`). Run `npm run export:web` after touching con
 
 ClearRelay is a serverless P2P screen relay. Three roles communicate over WebRTC with no media server:
 
-- **Recorder** (phone) — streams camera video (1920×1080, 8 FPS) to Admin via Link A
-- **Admin** — watches live feed, captures stills, sends images/code to Projector via Link B
+- **Recorder** (phone) — streams camera video (tries 4K, falls back to HD, 8 FPS) to Admin via Link A
+- **Admin** — watches the live feed, captures stills, sends images to the Projector
 - **Projector** — renders full-screen whatever Admin sends (called `display` on the wire)
 
 **Link A:** Recorder → Admin — WebRTC video track + control data channel
-**Link B:** Admin → Projector — WebRTC data channel only (M4, not yet implemented)
+**Link B:** Admin → Projector — image push over the WebSocket signaling relay (`push` message; no second WebRTC session)
 **Signaling:** WebSocket relay at `wss://omni-relay-production-d45c.up.railway.app` — Admin creates a 6-char room code, Recorder/Projector enter it to connect.
 
 ### Code layout
@@ -37,11 +37,13 @@ The single app lives in `apps/mobile-web/src/`:
 | Path | Purpose |
 |------|---------|
 | `app/` | expo-router file-based routes: index, recorder, admin, projector, pair |
-| `connection/` | WebRTC abstraction — `IConnection` interface, `connection.web.ts` (browser), `connection.ts` (native react-native-webrtc), `signal-ws.ts` (WebSocket signaling client) |
-| `camera/` | Camera abstraction — `ICameraSource` interface, `camera.web.ts` (getUserMedia), `camera.ts` (native react-native-webrtc) |
+| `connection/` | WebRTC abstraction — `IConnection`, `connection.web.ts` (browser), `connection.ts` (native), `signal-ws.ts` (WS signaling + push client) |
+| `camera/` | Camera abstraction — `ICameraSource`, `camera.web.ts` (getUserMedia), `camera.ts` (native react-native-webrtc) |
+| `lib/cv.ts` | Web-only capture enhancement: contrast → unsharp mask → auto-levels → JPEG; `rotateImage()` |
+| `lib/quad.ts` | Web quad detection + perspective warp — `detectQuad`/`warpPerspective` on `ImageData`; overlay helpers use canvas |
 | `protocol/` | Wire protocol — `messages.ts` types + parse/serialize, `messages.test.ts` |
 | `store/session.ts` | Zustand session state (unlock, role) |
-| `hooks/use-pairing.ts` | Pairing state machine: idle → creating → waiting-for-peer → joining → exchanging → connecting → connected → failed |
+| `hooks/use-pairing.ts` | Pairing state machine + `pushImage()` for Link B |
 | `config/index.ts` | All tunables — FPS, bitrate, ICE servers, signaling URL, chunk sizes |
 | `services/signaling/` | WebSocket relay server (`server.js`, plain Node.js, deployed on Railway) |
 
@@ -54,11 +56,11 @@ The single app lives in `apps/mobile-web/src/`:
 1. Admin calls `pairing.createRoom()` → connects WS → sends `{t:'create'}` → receives `{t:'created', code}` → displays 6-char code
 2. Recorder/Projector calls `pairing.joinRoom(code)` → connects WS → sends `{t:'join', code, role}` → receives `{t:'room-ok'}`
 3. Recorder creates WebRTC offer → relays via WS → Admin accepts → relays answer → ICE connects
-4. Projector joins WS room only (no WebRTC yet — Link B is M4)
+4. Projector receives `push` image messages from Admin over the same WS relay (Link B)
 
-### Admin screenshot capture
+### Admin capture pipeline
 
-Canvas drawn from `<video>` element at intrinsic resolution (`video.videoWidth × video.videoHeight`). CSS filter applied: `contrast(1.3) brightness(1.05) saturate(0.75)`. `VideoView` exposes `onVideoElement` prop to pass the DOM element to the parent. Captures stored in-memory as `{ id, ts, dataUrl, width, height }`.
+Canvas draws the live `<video>` at intrinsic resolution, then `enhanceCapture()` in `lib/cv.ts` (contrast 1.25 + brightness 1.05 → unsharp mask 1.8 → percentile auto-levels → JPEG 97%). `lib/quad.ts` detects the document quad (blue overlay) and "Auto-crop" applies perspective warp. `VideoView` exposes `onVideoElement` to pass the DOM element to the parent. Captures are in-memory: `{ id, ts, dataUrl, width, height }` (max 20).
 
 ### Protocol rules
 
@@ -75,9 +77,10 @@ Canvas drawn from `<video>` element at intrinsic resolution (`video.videoWidth �
 
 **Live at:** `https://naveenmorla1901.github.io/omni-relay/`
 **Signaling server:** `wss://omni-relay-production-d45c.up.railway.app` (Railway, `services/signaling/`, PORT=8081)
+**Latest APK:** v0.1.4 on GitHub Releases (`assembleRelease`, debug-keystore signing)
 
-Completed: M0 scaffold, M1 WebRTC + room-code pairing, M2 live video, M3 Admin capture gallery, M8 signaling server.
+Completed: M0–M5 — scaffold, room-code pairing, live video, Admin capture gallery, Admin→Projector image push, pure-TS quad detection + perspective warp. APK v0.1.4 runs on a physical Android device.
 
-Not yet implemented: Link B / M4 (Admin→Projector push), M5 CV pipeline, M6 camera tuning, M7 OCR, Android signed APK (push `v0.1.0` tag to build debug APK via GitHub Actions).
+Known issue: the deployed Railway relay runs pre-M4 code — Admin→Projector `push` fails in production until `services/signaling` is redeployed.
 
-Next: M4 — Admin → Projector data channel, image chunking, full-screen render.
+Next: test auto-crop on device; then the M5 remainder (CLAHE, EMA quad smoothing, raw-frame fallback) or M6 camera tuning.
