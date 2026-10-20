@@ -1,11 +1,7 @@
 {
   "$schema": "https://schema.railway.app/railway-service.json",
-  "build": {
-    "builder": "NIXPACKS"
-  },
   "deploy": {
-    "buildCommand": "npm install",
-    "startCommand": "npx ts-node server.ts",
+    "startCommand": "node server.js",
     "healthcheckPath": "/",
     "healthcheckTimeout": 30,
     "restartPolicyType": "ON_FAILURE",
