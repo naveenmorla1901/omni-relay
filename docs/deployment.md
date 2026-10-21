@@ -29,10 +29,11 @@ The URL is baked into `apps/mobile-web/src/config/index.ts` as `SIGNALING_WS_URL
 - Admin sends `{ t: 'create' }` → receives a 6-char room code.
 - Recorder/Projector send `{ t: 'join', code, role }` → server notifies Admin.
 - SDP offers/answers are relayed via `{ t: 'sdp', to, sdp, kind }`.
-- Admin pushes captured images to Projector via `{ t: 'push', data, mime }`.
+- Link B (Admin ↔ Projector stage) rides the same `sdp` forward with `kind: 'stage'`: the Projector sends `viewport`, Admin sends `stage-frame` / `stage-clear` (JSON in the `sdp` field).
+- `{ t: 'push', data, mime }` exists in current `server.js`, but the deployed relay predates it and silently drops it, so the app no longer sends it.
 - Rooms expire after 30 minutes. Confusable characters (0/O, 1/I/L) are excluded from codes.
 
-The server never sees WebRTC media. The push payload is a raw base64 JPEG string forwarded verbatim to the display peer.
+The server never sees WebRTC media. Stage frames are base64 JPEGs inside the `sdp` field, forwarded verbatim to the other peer.
 
 ### Self-hosting
 

@@ -6,10 +6,10 @@
 > unless a decision is recorded below.
 
 **Last updated:** 2026-10-20
-**Current milestone:** M0–M5 complete (web + Android APK v0.1.6; v0.1.7 quality pass; v0.1.8 720p-reset/blur fix in release). Device-testing backlog implemented: 4K/detail camera tuning, robust quad detection, auto-fit with Undo, 1–4× zoom, capture Download, camera-flip mirror sync, Projector drag/drop + paste. Follow-up: Admin capture delete/clear and a Recorder physical rear-lens picker (Auto 4K, Ultra-wide, Main · high quality, Telephoto when exposed). The 2026-10-20 quality pass adds sharpest-frame capture, CLAHE, luma-only sharpening, a 16 Mbps ceiling, and a 1080p text floor for explicit lenses.
-**Current stop point:** The quality pass is implemented and local checks are green (typecheck, lint, 33 tests, web export). Admin captures the sharpest of three live frames, then runs contrast/brightness → percentile auto-levels → CLAHE → luma-only unsharp → JPEG 97%. The encoder ceiling is 16 Mbps, native encoder params are re-applied after a lens switch, and explicit lenses that deliver less than 1080p switch back to Auto with an explanation. Recorder and Admin both flag low-resolution streams. The downloaded samples contained three 4K captures and three 528×960/720×1280 lens captures; sharpening cannot recover the low-resolution set, so the lens floor is the important fix. APK v0.1.7 is tagged from `f890fba`. APK v0.1.8 adds the native 720p-reset fix and 30 fps sensor capture; the GitHub Actions build and real-device test are pending.
-**Next action:** Install APK v0.1.8 on the Android Recorder and confirm Admin reports 2160×3840 with no low-resolution warning (uninstall v0.1.6 if Android rejects the debug-keystore signature). Select each rear lens at close range: a 720p lens should snap back to Auto with the text-floor message, while a 4K lens should stay selected. Capture several close-up screens and inspect the sharpest-frame/CLAHE output. Then redeploy the Railway signaling relay from current `main` and re-run remote create/join/push.
-**As of commit:** `f890fba` (code commit for the capture-quality and low-resolution-lens guard; later docs/APK metadata commits follow)
+**Current milestone:** M0–M5 complete (web + Android APK v0.1.8 released; v0.1.9 Projector stage building). Device-testing backlog implemented: 4K/detail camera tuning, robust quad detection, auto-fit with Undo, 1–4× zoom, capture Download, camera-flip mirror sync, Projector drag/drop + paste. Follow-up: Admin capture delete/clear and a Recorder physical rear-lens picker (Auto 4K, Ultra-wide, Main · high quality, Telephoto when exposed). The 2026-10-20 quality pass adds sharpest-frame capture, CLAHE, luma-only sharpening, a 16 Mbps ceiling, and a 1080p text floor for explicit lenses. v0.1.8 fixes the native 720p reset and handheld blur. v0.1.9 adds the full-screen Projector and the Admin phone-shaped stage over the relay's `sdp` forward.
+**Current stop point:** Projector stage implemented, pushed (`2704457`), and tagged v0.1.9. The Projector goes full-screen when connected, keeps the screen awake, and reports its viewport; Admin composes a phone-shaped stage with the Projector's exact aspect and sends frames rendered at its physical pixels. Link B rides the relay's `sdp` forward because the deployed relay drops `push`. Capture now keeps the sharpest of five frames. User confirmed v0.1.8 camera quality is good on device. Checks: typecheck, lint, 47 tests, web export green; Admin↔Projector verified in Chrome against the live relay.
+**Next action:** Install APK v0.1.9. Open the Projector on a phone, confirm the Admin frame matches its shape, then test drop/paste/choose image, pinch and wheel zoom, Fit/Fill, text, direction, and Clear screen. Recheck 4K Recorder capture with sharpest-of-5.
+**As of commit:** `2704457` (Projector stage + full-screen Projector, tagged v0.1.9 with the docs commit)
 **Blocker:** none for Link B — the deployed relay drops `push`, so the Projector stage rides the relay's `sdp` forward (`kind: 'stage'`), verified live. Real-device verification of the quality/lens/delete work is still pending. `react-native-webrtc` ignores advanced focus/exposure constraints on native, so Re-lock is only best-effort there; manual ISO/shutter/focus and native still-photo capture need a Vision Camera/Camera2 path. Some Android builds expose only one logical rear camera, and some explicit lenses only support 720p, so Ultra-wide may remain unavailable or be rejected by the text floor.
 
 ## How to update this file
@@ -139,7 +139,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] 6-char room codes (confusable chars excluded); rooms expire after 30 min
 - [x] `push` relay: forwards image data from admin to display peer
 - [x] Deployed to Railway: `wss://omni-relay-production-d45c.up.railway.app` (root dir `services/signaling`, PORT=8081)
-- [x] `SignalClient` — `pushToDisplay()` method, `push` message type
+- [x] `SignalClient` — `relayStage()` sends Link B over the `sdp` forward (`pushToDisplay()` removed; `push` still received for newer relays)
 - [x] URL baked into `config/index.ts` default; overridable via `EXPO_PUBLIC_SIGNALING_URL`
 - [ ] Dockerfile / self-host notes
 - [ ] Optional TURN for hard NAT (needed when both peers on different carrier NAT)
@@ -151,7 +151,8 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [ ] Full responsive Admin polish
 - [x] Web deploy workflow (GitHub Pages, auto on push to main)
 - [x] GitHub Actions Android APK workflow (`build-android.yml` — `assembleRelease` + debug keystore, triggers on `v*` tag or manual)
-- [~] APK v0.1.8 release — native 720p-reset fix + 30 fps capture; GitHub Actions build/publish and device test pending
+- [~] APK v0.1.9 release — full-screen Projector + Admin phone-shaped stage; GitHub Actions build/publish and device test pending
+- [x] APK v0.1.8 release — native 720p-reset fix + 30 fps capture; built by GitHub Actions, camera quality confirmed on device
 - [x] APK v0.1.7 release — tagged from `f890fba`; superseded by v0.1.8
 - [x] APK v0.1.6 published to GitHub Releases — built from `01a7a59`; superseded by v0.1.7
 - [x] APK v0.1.5 published to GitHub Releases — previous build, superseded by v0.1.6
@@ -197,16 +198,16 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] iOS personal use: add GitHub Pages URL to Safari home screen as PWA
 - [x] Android APK CI: `assembleRelease` + debug-keystore signing; triggers on `v*` tag
 - [x] APK v0.1.6 live at `github.com/naveenmorla1901/omni-relay/releases/latest` (superseded by the v0.1.7 build)
-- [~] APK v0.1.8 720p-reset/blur fix build — GitHub Actions publish pending
+- [~] APK v0.1.9 Projector stage build — GitHub Actions publish pending
 - [x] Download APK button on home screen links to latest release
 - [ ] Android keystore + signed release APK (for Play Store / wider distribution)
 
 ## Decisions
 
-- **Serverless:** no cloud backend, media server, or database. Static GitHub Pages for web; signaling relay for room codes + image push only; media stays P2P.
+- **Serverless:** no cloud backend, media server, or database. Static GitHub Pages for web; signaling relay for room codes + Link B stage frames only; media stays P2P.
 - **Pairing:** room codes via WebSocket signaling relay. QR/copy-paste path removed from primary UI.
 - **Signaling server:** plain JS (`server.js`) on Railway, root dir `services/signaling`, `node server.js`, PORT=8081.
-- **Image push (M4):** via existing WS relay connection (`push` message type), not a second WebRTC session. Single message, no chunking — sufficient for JPEG ≤ 1 MB.
+- **Link B transport:** via the existing WS relay connection, not a second WebRTC session. Originally the `push` message; since 2026-10-20 the relay's `sdp` forward with `kind: 'stage'`, because the deployed relay drops `push`. Single message, no chunking — stage JPEGs are ≤ ~1 MB.
 - **Projector naming:** UI uses **Projector**; wire role stays `display`.
 - **Access key:** client-side gate only; `ACCESS_KEY` in `config/index.ts`; not a security boundary.
 - **GitHub Pages base path:** `EXPO_BASE_URL=/omni-relay` injected by deploy workflow.

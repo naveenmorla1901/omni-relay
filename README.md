@@ -3,8 +3,8 @@
 A serverless, one-way screen relay built around legible text: **Recorder → Admin → Projector** over direct WebRTC connections.
 
 - **Recorder** (phone camera) locks exposure/focus and streams low-FPS/high-resolution video to Admin over WebRTC (Link A).
-- **Admin** watches the live feed, captures enhanced stills (unsharp mask + auto-levels), and pushes them to Projector full-screen (Link B).
-- **Projector** renders the latest pushed image full-screen (called `display` in the protocol).
+- **Admin** watches the live feed, captures enhanced stills (sharpest of 5 frames, CLAHE, sharpening), and composes the Projector screen in a phone-shaped stage (Link B).
+- **Projector** goes full-screen and shows exactly what is inside Admin's phone frame (called `display` in the protocol).
 
 No cloud backend, media server, or persistence. A WebSocket relay handles room-code pairing only; media and images stay peer-to-peer or relay-routed at the application layer.
 
@@ -18,7 +18,7 @@ No cloud backend, media server, or persistence. A WebSocket relay handles room-c
 
 ## Status
 
-M0–M4 + M8 complete. All three roles connect via 6-char room codes. Admin captures CV-enhanced stills and pushes them to Projector full-screen. Native Android camera/WebRTC wired; push `v*` tag to build a debug APK via GitHub Actions.
+M0–M5 + M8 complete. All three roles connect via 6-char room codes. Admin captures CV-enhanced stills and composes a phone-shaped Projector stage that appears full-screen on the Projector. Native Android camera/WebRTC wired; push a `v*` tag to build an APK via GitHub Actions (pushing `main` only redeploys the web app).
 
 Full progress is in [`PROJECT-STATUS.md`](./PROJECT-STATUS.md). Architecture, milestones, protocol, and acceptance criteria are in [`ClearRelay-Build-Plan.md`](./ClearRelay-Build-Plan.md) (read §1–5, §11, §21 before changing architecture). Deployment notes are in [`docs/deployment.md`](./docs/deployment.md).
 
@@ -43,13 +43,15 @@ All devices must open the HTTPS URL and enter the access key first.
 
 1. Open the web app on the projector screen → **Projector**.
 2. Enter the same 6-character code and press **Connect**.
-3. The screen shows "Connected to Admin" and waits for content.
+3. The screen turns full-screen black and waits for content. Tap it for Full screen, Disconnect, or local drop/paste.
 
-### 4 — Admin: capture and push
+### 4 — Admin: capture and compose the Projector screen
 
-1. Once the Recorder is live, press **Capture still** to grab an enhanced frame (contrast + unsharp mask + auto-levels).
+1. Once the Recorder is live, press **Capture still** to grab the sharpest of five frames, enhanced for text.
 2. The captured image appears in the gallery — tap any thumbnail to select it.
-3. With the Projector connected, press **Send to Projector** — the image renders full-screen on the Projector.
+3. In **Projector screen** (the phone-shaped frame, matching the Projector's real shape), press **Use capture**, or drop, paste, or choose any image. Drag to move; scroll, pinch, or use the slider to zoom; Fit/Fill/↻ 90° adjust it.
+4. Type or paste text into the Text box; set size, color, or code font, and pick **Drag moves: Text** to position it.
+5. Change **Shape** or **Direction** (portrait/landscape) as needed. With **Live** on, every change appears on the Projector; **Clear screen** blanks it.
 
 > Room codes expire after 30 minutes. Start a new session if the code times out.
 
