@@ -122,6 +122,7 @@ The build takes 10–15 minutes. When it finishes, the APK appears in **Releases
 1. On the Android device, allow **Install unknown apps** from the browser or Files app.
 2. Download the APK from the Releases page and tap to install.
 3. Open ClearRelay, enter the access key, and choose **Recorder**.
+4. When it connects, allow notifications if asked. The "ClearRelay Recorder" notification means the camera keeps streaming with the screen off (camera foreground service from `apps/mobile-web/modules/recorder-service`). Battery-saver modes that kill background apps can still stop it; exempt ClearRelay from battery optimisation if the feed stops.
 
 ### Signed release APK (future)
 

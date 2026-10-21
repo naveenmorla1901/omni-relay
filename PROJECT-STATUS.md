@@ -6,10 +6,10 @@
 > unless a decision is recorded below.
 
 **Last updated:** 2026-10-21
-**Current milestone:** M0–M5 complete (web + Android APK v0.1.9 released; v0.1.10 building). v0.1.10 answers the v0.1.9 device test: always-live phone-shaped Admin stage with an image-editor toolbar, compact Admin session bar with a big live feed, Admin↔Projector handshake + frame acks, and Recorder/Projector auto-reconnect (Recorder stays awake and restarts its camera after the phone wakes).
-**Current stop point:** v0.1.10 implemented (`2adfb30`). Diagnosis of the v0.1.9 report: the "Send to Projector" button and "Language" field the user saw exist only in pre-v0.1.9 Admin code, so that Admin was a stale tab/APK still sending `push`, which the live relay drops — the Projector waited forever and Admin claimed "Sent". The live relay itself forwards 8 MB stage frames fine (measured). Now Admin answers each Projector `viewport` with `stage-ready`, the Projector acks every decoded frame with `stage-ack`, and both show the truth (Projector: "Admin is not answering — reload Admin"; Admin: "showing on the Projector" or "not confirmed"). Every role shows its build (`APP_BUILD`). Checks: typecheck, lint, 52 tests, web export green; Admin↔Projector verified in Chrome against the live relay (live typing, image drop, Fill/zoom, Projector socket drop → silent rejoin → new frame shown, Projector leave).
-**Next action:** Install APK v0.1.10 on the phones and reload the Admin page (top bar must read v0.1.10). Check: typing in Admin appears live on the Projector phone; drop/choose an image and use zoom/Fit/Fill; turn the Recorder screen off and on again and confirm the feed resumes by itself.
-**As of commit:** `2adfb30` (always-live stage, Projector handshake, auto-reconnect; tagged v0.1.10 with the docs commit)
+**Current milestone:** M0–M5 complete (web + Android APK v0.1.10 released; v0.1.11 building). v0.1.10 (user-confirmed: "that is what I was expecting") made the phone-shaped Admin stage always live with an image-editor toolbar, added the Admin↔Projector handshake/acks, and auto-reconnect. v0.1.11 adds screen-off Recorder streaming on Android (camera foreground service), a 0/90/180/270 live-feed rotation in Admin, and a wider Projector pane.
+**Current stop point:** v0.1.11 implemented (`5ec0afe`). A local Expo module `modules/recorder-service` runs an Android camera-type foreground service (notification + partial wake lock + high-perf Wi-Fi lock) while the Recorder streams; it compiles locally (`:recorder-service:compileReleaseKotlin`) and the merged release manifest carries the `foregroundServiceType="camera"` service and permissions. Admin rotates the live feed (remembered per browser) and captures follow the rotation (verified in Chrome: 1080×1920 sideways feed → 1920×1080 upright capture). The Projector pane takes ~55% of the width with the phone beside its controls. Checks: typecheck, lint, 52 tests, web export green.
+**Next action:** Install APK v0.1.11 on the Recorder phone, connect, confirm the "Screen-off streaming is on" line and the notification, then press the power button and check the Admin feed keeps moving for a few minutes. In Admin, pick the rotation that makes the sideways phone upright and capture.
+**As of commit:** `5ec0afe` (screen-off Recorder streaming + live-feed rotation; tagged v0.1.11 with the docs commit)
 **Blocker:** none for Link B — the deployed relay drops `push`, so the Projector stage rides the relay's `sdp` forward (`kind: 'stage'`), verified live. Real-device verification of the quality/lens/delete work is still pending. `react-native-webrtc` ignores advanced focus/exposure constraints on native, so Re-lock is only best-effort there; manual ISO/shutter/focus and native still-photo capture need a Vision Camera/Camera2 path. Some Android builds expose only one logical rear camera, and some explicit lenses only support 720p, so Ultra-wide may remain unavailable or be rejected by the text floor.
 
 ## How to update this file
@@ -66,7 +66,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] `contentHint='detail'` on web video track for sharper WebRTC encoding
 - [x] Camera settings display (resolution × fps · facingMode) in Recorder UI
 - [x] Recorder shows connection status chip and camera controls (Re-lock, Flip, Stop/Start)
-- [x] Recorder stays awake while connected (keep-awake) and restarts the camera when the phone wakes or the track ends; the new track replaces the old one on Link A
+- [x] Recorder streams with the screen off (Android APK): camera-type foreground service with notification, partial wake lock, and high-perf Wi-Fi lock while connected and streaming; stops with the session. Falls back to keep-awake + camera restart on wake if Android refuses the service. Browsers cannot stream with the screen off.
 - [ ] Battery guard: pause camera/encoder when app backgrounds
 
 ### M3 — Admin capture + gallery
@@ -156,7 +156,8 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [~] Admin layout: compact session bar, full-width workspace, live feed sized to the window on the left, phone stage on the right; stacked below 1000 px
 - [x] Web deploy workflow (GitHub Pages, auto on push to main)
 - [x] GitHub Actions Android APK workflow (`build-android.yml` — `assembleRelease` + debug keystore, triggers on `v*` tag or manual)
-- [~] APK v0.1.10 release — always-live stage, handshake/acks, auto-reconnect, Recorder keep-awake; GitHub Actions build and device test pending
+- [~] APK v0.1.11 release — screen-off Recorder streaming (foreground service), live-feed rotation, wider Projector pane; GitHub Actions build and device test pending
+- [x] APK v0.1.10 release — always-live stage, handshake/acks, auto-reconnect; user confirmed the stage works as expected
 - [x] APK v0.1.9 release — full-screen Projector + Admin phone-shaped stage; device test found the stale-Admin and Recorder-sleep issues fixed in v0.1.10
 - [x] APK v0.1.8 release — native 720p-reset fix + 30 fps capture; built by GitHub Actions, camera quality confirmed on device
 - [x] APK v0.1.7 release — tagged from `f890fba`; superseded by v0.1.8
@@ -204,7 +205,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] iOS personal use: add GitHub Pages URL to Safari home screen as PWA
 - [x] Android APK CI: `assembleRelease` + debug-keystore signing; triggers on `v*` tag
 - [x] APK v0.1.6 live at `github.com/naveenmorla1901/omni-relay/releases/latest` (superseded by the v0.1.7 build)
-- [~] APK v0.1.10 build — GitHub Actions publish pending
+- [~] APK v0.1.11 build — GitHub Actions publish pending
 - [x] Download APK button on home screen links to latest release
 - [ ] Android keystore + signed release APK (for Play Store / wider distribution)
 
@@ -217,6 +218,8 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **Stage handshake (2026-10-21):** `stage-ready` (Admin → Projector, answering `viewport`) and `stage-ack` (Projector → Admin, frame id) are new v1 stage messages. They make a stale Admin visible instead of silent, and let the Projector detect a lost relay slot and rejoin.
 - **Always-live stage:** no Send button or Live toggle; every settled edit (250 ms debounce) and every Projector rejoin sends the current frame. Shape presets were removed: the stage is the Projector phone's real shape, Upright or Sideways.
 - **Auto-reconnect:** Recorder/Projector keep their room code and rejoin silently (1 s → 15 s backoff). A Recorder whose P2P link is still connected does not re-offer after a socket-only drop. The deployed relay deletes a role's slot when *any* socket of that role closes, so a dead socket closing late can evict its replacement; the client self-heals (unanswered offer → rejoin; Projector heartbeat without `stage-ready` → rejoin). `server.js` now ignores such late closes and expires rooms after 30 idle minutes, effective on the next relay redeploy.
+- **Screen-off streaming (2026-10-21):** Android revokes camera access from apps without a camera foreground service once the screen is off, and react-native-webrtc has no lifecycle hooks of its own, so a camera-type foreground service is enough to keep capture + encode running. It is a local Expo module (`apps/mobile-web/modules/recorder-service`, Kotlin, autolinked by prebuild) rather than a third-party package. It must start while the Recorder is visible and after camera permission (Android 14). It also holds a partial wake lock and a high-perf Wi-Fi lock; battery use is the trade-off the user asked for. JS timers pause in the background on Android, so relay reconnects run when the app is next opened; the P2P video does not depend on them.
+- **Live-feed rotation:** display-only CSS rotation of the Admin `<video>` plus the same rotation applied to captures (`rotateImage`). The Recorder still sends sensor frames unchanged.
 - **Build label:** `APP_BUILD` in `config/index.ts` is shown in every role and must be bumped with each `v*` tag.
 - **Projector naming:** UI uses **Projector**; wire role stays `display`.
 - **Access key:** client-side gate only; `ACCESS_KEY` in `config/index.ts`; not a security boundary.
@@ -276,7 +279,13 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] Image from files: drop anywhere on the stage panel, Choose from files button inside the empty phone, paste, or use the selected capture.
 - [x] Easier image editing: zoom toward cursor/pinch, −/+ buttons and slider, Fit / Fill / Center / rotate, double-click Fit↔Fill.
 - [x] Big session box removed: compact session bar; live feed takes the left, the phone stage the right.
-- [~] Recorder stopped after the phone screen went off: keep-awake while connected, camera restart on wake, Link A re-offer and room rejoin. **Needs device verification.**
+- [~] Recorder stopped after the phone screen went off: v0.1.10 added keep-awake, camera restart on wake, Link A re-offer and room rejoin; v0.1.11 adds the camera foreground service so the camera keeps streaming with the screen off. **Needs device verification.**
+
+## Requested backlog (2026-10-21, second pass)
+
+- [x] Rotate the live feed 0/90/180/270 from the Admin feed header; remembered per browser; captures come out with the same rotation so a sideways Recorder phone gives upright stills.
+- [x] Less space for the live feed, more for the Projector: right pane ~55% of the width, phone beside its controls, feed sized to its pane.
+- [~] Camera must keep running with the screen off (mandatory): Android camera foreground service in `modules/recorder-service`. **Needs device verification**; the web Recorder cannot do this.
 
 ## Session log
 
@@ -294,6 +303,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **2026-10-20** — Pushed `b9f9354` (code) + `d66f92a` (docs); CI and Deploy web green. Tagged `v0.1.5`; the Android workflow built and published `ClearRelay-v0.1.5.apk` (135 MB). Railway relay redeploy still pending.
 - **2026-10-20** — Admin delete/clear + physical lens picker: added per-capture Delete, per-thumbnail Delete, and Clear all with a confirmation modal; deleting the active frame selects the next or clears the preview and cancels in-flight detection/crop. Added `src/camera/lenses.ts` + tests to classify iPhone/Android lens labels and a Recorder lens picker (Auto 4K preferred, Ultra-wide, Main · high quality, Telephoto, numbered Android cameras). Added `setFacingMode`/`deviceId` to camera settings, mapped native `facing`, avoided the web enumerateDevices probe while streaming, and fall back to Auto if a lens switch fails. Checks: typecheck, lint, 26 tests, web export green. Code commit `01a7a59`.
 - **2026-10-20** — Pushed `214e9a5` (docs); CI and Deploy web green. Live bundle verified to contain the new Admin Delete/Clear all and Recorder Camera lens / Auto 4K / Ultra-wide / high-quality UI. Tagged `v0.1.6` at `01a7a59`; the Android workflow built and published `ClearRelay-v0.1.6.apk` (135,044,026 bytes). Railway relay redeploy and real-device verification still pending.
+- **2026-10-21** — v0.1.11: user confirmed v0.1.10 stage. Added `modules/recorder-service` (Expo local module: camera-type foreground service, partial wake lock, Wi-Fi lock) and `lib/background-camera` wrapper; Recorder starts it while streaming and drops keep-awake when it runs. Admin live-feed rotation 0/90/180/270 with rotated captures; Projector pane ~55% wide with phone beside controls. Verified: module compiles, merged manifest has the camera FGS; rotation + rotated capture in Chrome. Checks green (52 tests, web export). Code commit `5ec0afe`.
 - **2026-10-21** — v0.1.9 device-test fixes: found the "nothing sent" report came from a stale Admin build; added `stage-ready`/`stage-ack`, Projector double-buffer + heartbeat, `APP_BUILD` labels, always-live phone stage with image-editor toolbar, compact Admin bar with a big live feed, Recorder/Projector auto-reconnect, Recorder keep-awake + camera restart, Admin fresh connection per offer, relay late-close/idle-expiry fixes (pending redeploy). Measured live relay forwarding 8 MB frames. Checks: typecheck, lint, 52 tests, web export green; Admin↔Projector rejoin verified in Chrome. Code commit `2adfb30`.
 - **2026-10-20** — Projector stage: confirmed the live relay silently drops `push` (Projector stuck on "Waiting for content"). Link B now uses the relay's `sdp` forward with `kind: 'stage'`. Projector goes full-screen and reports its viewport; Admin composes a phone-shaped stage (image drag/zoom/fit/fill/rotate, text, shape, direction, background) rendered at the Projector's physical pixels and sent live. Capture now keeps the sharpest of five frames. Checks: typecheck, lint, 47 tests, web export green; Admin↔Projector verified in Chrome against the live relay.
 - **2026-10-20** — Capture-quality pass from 12 downloaded samples. Found six captures: three at 2160×3840 (readable but soft/moiré) and three explicit-lens captures at 528×960/720×1280 (unrecoverable). Added sharpest-of-3 capture, CLAHE, luma-only unsharp mask, JPEG 97, a 16 Mbps encoder ceiling, and encoder-param reapplication after native lens replacement. Added a 1080p text floor: explicit lenses below it restore Auto with an explanation, and both Recorder and Admin warn on low-resolution streams. Fixed the web VideoView ref callback identity so Admin resolution tracking cannot loop. Checks: typecheck, lint, 33 tests, web export green. Code commit `f890fba`; APK v0.1.7 pending.

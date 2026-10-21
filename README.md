@@ -38,6 +38,7 @@ All devices must open the HTTPS URL and enter the access key first.
 2. Enter the 6-character code and press **Connect**.
 3. The rear camera starts automatically. Keep the phone steady — low-FPS, high-resolution mode prioritises text clarity.
 4. Use **Re-lock** to re-apply exposure/focus lock after the scene stabilises. Use **Flip** to switch cameras.
+5. In the Android app you can turn the screen off: a "ClearRelay Recorder" notification shows while the camera keeps streaming. Browsers stop the camera when the screen turns off.
 
 ### 3 — Projector (screen): join and display
 
@@ -53,7 +54,9 @@ All devices must open the HTTPS URL and enter the access key first.
 4. Type or paste text or code into the Text box — it appears on the Projector as you type. Set size, color, or code font; drag the text on the phone to place it.
 5. Everything is live — there is no Send button. The status line reads **showing on the Projector** once the phone confirms a frame. **Upright/Sideways** turns the frame, **Black/White** sets the background, and **Clear Projector** blanks it.
 
-The Recorder keeps its screen on while connected. If the phone sleeps or the network drops, the Recorder and Projector reconnect with the same code on their own.
+If the network drops, the Recorder and Projector reconnect with the same code on their own.
+
+Holding the Recorder phone sideways? Use **Rotate** (0° / 90° / 180° / 270°) above the Admin live feed; captures come out with the same rotation.
 
 > The deployed relay expires rooms 30 minutes after creation. Admin says so when it happens — start a new session and enter the new code.
 
