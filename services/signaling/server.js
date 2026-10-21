@@ -21,10 +21,11 @@ function generateCode() {
   return code;
 }
 
+// Rooms expire after 30 idle minutes; any relayed message keeps them alive.
 setInterval(() => {
   const cutoff = Date.now() - 30 * 60 * 1000;
   for (const [code, room] of rooms) {
-    if (room.createdAt < cutoff) {
+    if (room.lastActive < cutoff) {
       for (const peer of room.peers.values()) peer.roomCode = null;
       rooms.delete(code);
     }
@@ -51,7 +52,7 @@ wss.on('connection', (ws) => {
         const code = generateCode();
         peer.role = 'admin';
         peer.roomCode = code;
-        rooms.set(code, { code, peers: new Map([['admin', peer]]), createdAt: Date.now() });
+        rooms.set(code, { code, peers: new Map([['admin', peer]]), createdAt: Date.now(), lastActive: Date.now() });
         push(ws, { t: 'created', code });
         break;
       }
@@ -70,6 +71,7 @@ wss.on('connection', (ws) => {
         peer.role = role;
         peer.roomCode = code;
         room.peers.set(role, peer);
+        room.lastActive = Date.now();
         push(ws, { t: 'room-ok', role });
         const admin = room.peers.get('admin');
         if (admin) push(admin.ws, { t: 'joined', role });
@@ -80,6 +82,7 @@ wss.on('connection', (ws) => {
         if (!room) { push(ws, { t: 'error', msg: 'Not in a room.' }); return; }
         const target = room.peers.get(msg.to);
         if (!target) { push(ws, { t: 'error', msg: `${msg.to} is not in the room yet.` }); return; }
+        room.lastActive = Date.now();
         push(target.ws, { t: 'sdp', from: peer.role, sdp: msg.sdp, kind: msg.kind });
         break;
       }
@@ -101,6 +104,9 @@ wss.on('connection', (ws) => {
     if (!roomCode) return;
     const room = rooms.get(roomCode);
     if (!room) return;
+    // A rejoined peer replaces its dead socket; that socket closing late must
+    // not evict the replacement.
+    if (room.peers.get(role) !== peer) return;
     room.peers.delete(role);
     if (role === 'admin') {
       for (const p of room.peers.values()) {

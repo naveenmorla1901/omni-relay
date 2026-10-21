@@ -1,7 +1,7 @@
 import { Link } from 'expo-router';
 import { useKeepAwake } from 'expo-keep-awake';
 import { StatusBar } from 'expo-status-bar';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
@@ -21,8 +21,10 @@ import { AccessBoundary } from '@/components/access-boundary';
 import { ProjectorDropZone } from '@/components/projector-drop-zone';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
+import { APP_BUILD, CONFIG } from '@/config';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { usePairing } from '@/hooks/use-pairing';
+import type { StageImage } from '@/hooks/use-pairing';
 import { useTheme } from '@/hooks/use-theme';
 import type { Viewport } from '@/lib/stage';
 import { useSessionStore } from '@/store/session';
@@ -46,11 +48,8 @@ function ProjectorWorkspace() {
   const [codeInput, setCodeInput] = useState('');
   const [localContent, setLocalContent] = useState<LocalContent | null>(null);
   const connected = pairing.phase === 'connected';
-  const received = pairing.receivedImage;
-  const imageSrc = received ? `data:${received.mime};base64,${received.data}` : null;
   const localImage = localContent?.kind === 'image' ? localContent.dataUrl : null;
   const localCode = localContent?.kind === 'code' ? localContent.text : null;
-  const displayImage = localImage ?? imageSrc;
 
   const handleLocalImage = useCallback((dataUrl: string) => {
     setLocalContent({ kind: 'image', dataUrl });
@@ -73,13 +72,18 @@ function ProjectorWorkspace() {
   if (connected) {
     return (
       <FullScreenProjector
-        imageUri={displayImage}
+        stageImage={pairing.receivedImage}
+        localImage={localImage}
         localCode={localCode}
         showingLocal={localContent !== null}
         onLocalImage={handleLocalImage}
         onLocalCode={handleLocalCode}
         onClearLocal={clearLocalContent}
         sendViewport={pairing.sendViewport}
+        onShown={pairing.ackStageFrame}
+        adminReady={pairing.adminStageReady}
+        linkEpoch={pairing.linkEpoch}
+        reconnecting={pairing.reconnecting}
         onDisconnect={() => { pairing.reset(); setCodeInput(''); setLocalContent(null); }}
       />
     );
@@ -97,6 +101,7 @@ function ProjectorWorkspace() {
                 <ThemedText type="smallBold" style={{ color: theme.accent }}>← All roles</ThemedText>
               </Pressable>
             </Link>
+            <ThemedText type="code" themeColor="textSecondary" style={styles.build}>{APP_BUILD}</ThemedText>
             <Pressable
               accessibilityRole="button"
               onPress={lock}
@@ -192,13 +197,18 @@ function ProjectorWorkspace() {
 }
 
 type FullScreenProps = {
-  imageUri: string | null;
+  stageImage: StageImage | null;
+  localImage: string | null;
   localCode: string | null;
   showingLocal: boolean;
   onLocalImage: (dataUrl: string) => void;
   onLocalCode: (text: string) => void;
   onClearLocal: () => void;
   sendViewport: (viewport: Viewport) => void;
+  onShown: (id: string) => void;
+  adminReady: boolean;
+  linkEpoch: number;
+  reconnecting: boolean;
   onDisconnect: () => void;
 };
 
@@ -207,31 +217,82 @@ type FullScreenProps = {
  * screen size is reported so Admin's phone frame matches it pixel for pixel.
  */
 function FullScreenProjector({
-  imageUri,
+  stageImage,
+  localImage,
   localCode,
   showingLocal,
   onLocalImage,
   onLocalCode,
   onClearLocal,
   sendViewport,
+  onShown,
+  adminReady,
+  linkEpoch,
+  reconnecting,
   onDisconnect,
 }: FullScreenProps) {
   useKeepAwake(undefined, { suppressDeactivateWarnings: true });
   const { width, height } = useWindowDimensions();
   const [controlsVisible, setControlsVisible] = useState(false);
+  const [adminSilent, setAdminSilent] = useState(false);
+  // Double buffer: the new frame decodes invisibly on top, then replaces the
+  // shown one, so live typing never flashes black between frames.
+  const [shown, setShown] = useState<{ id: string; uri: string } | null>(null);
+  const [everShown, setEverShown] = useState(false);
+  const pending = stageImage ? { id: stageImage.id, uri: `data:${stageImage.mime};base64,${stageImage.data}` } : null;
+  const shownIdRef = useRef<string | null>(null);
 
-  // Re-report on rotation, browser full-screen, or window resize.
+  // Re-report on rotation, browser full-screen, window resize, or a rejoin;
+  // keep asking until a current Admin answers.
   useEffect(() => {
     if (width <= 0 || height <= 0) return;
-    const timer = setTimeout(() => sendViewport({ w: width, h: height, dpr: PixelRatio.get() }), 150);
+    const viewport = { w: width, h: height, dpr: PixelRatio.get() };
+    const first = setTimeout(() => sendViewport(viewport), 150);
+    const retry = adminReady ? null : setInterval(() => sendViewport(viewport), CONFIG.STAGE_VIEWPORT_RETRY_MS);
+    return () => {
+      clearTimeout(first);
+      if (retry) clearInterval(retry);
+    };
+  }, [adminReady, height, linkEpoch, sendViewport, width]);
+
+  useEffect(() => {
+    if (adminReady) {
+      const reset = setTimeout(() => setAdminSilent(false), 0);
+      return () => clearTimeout(reset);
+    }
+    const timer = setTimeout(() => setAdminSilent(true), CONFIG.STAGE_READY_TIMEOUT_MS);
     return () => clearTimeout(timer);
-  }, [height, sendViewport, width]);
+  }, [adminReady, linkEpoch]);
+
+  const handleLoaded = useCallback((id: string, uri: string) => {
+    if (shownIdRef.current === id) return;
+    shownIdRef.current = id;
+    setShown({ id, uri });
+    setEverShown(true);
+    onShown(id);
+  }, [onShown]);
+
+  // Admin cleared the screen.
+  useEffect(() => {
+    if (stageImage || !shown) return;
+    const timer = setTimeout(() => {
+      shownIdRef.current = null;
+      setShown(null);
+    }, 0);
+    return () => clearTimeout(timer);
+  }, [shown, stageImage]);
 
   const enterFullscreen = useCallback(() => {
     if (Platform.OS !== 'web' || typeof document === 'undefined') return;
     void document.documentElement.requestFullscreen?.().catch(() => undefined);
     setControlsVisible(false);
   }, []);
+
+  const waitingHint = adminSilent
+    ? `Admin is not answering. Reload the Admin page so it runs ${APP_BUILD} or newer, then reconnect with its new code.`
+    : adminReady
+      ? 'Anything placed in Admin\'s phone frame appears here. Tap for options.'
+      : 'Waiting for Admin… Tap for options.';
 
   return (
     <View style={styles.fullscreen}>
@@ -245,17 +306,42 @@ function FullScreenProjector({
           <ScrollView style={styles.fullscreenCode} contentContainerStyle={styles.codeContent}>
             <Text selectable style={styles.codeText}>{localCode}</Text>
           </ScrollView>
-        ) : imageUri ? (
-          <Image source={{ uri: imageUri }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+        ) : localImage ? (
+          <Image source={{ uri: localImage }} style={StyleSheet.absoluteFill} resizeMode="contain" />
         ) : (
-          <View style={styles.fullscreenWaiting}>
-            <Text style={styles.fullscreenWaitingTitle}>Connected to Admin</Text>
-            <Text style={styles.fullscreenWaitingHint}>
-              Waiting for Admin to place something on the Projector screen. Tap for options.
-            </Text>
-          </View>
+          <>
+            {shown ? (
+              <Image source={{ uri: shown.uri }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+            ) : null}
+            {pending && pending.id !== shown?.id ? (
+              <Image
+                key={pending.id}
+                source={{ uri: pending.uri }}
+                style={[StyleSheet.absoluteFill, styles.decoding]}
+                resizeMode="contain"
+                onLoad={() => handleLoaded(pending.id, pending.uri)}
+              />
+            ) : null}
+            {!shown && !pending && (!everShown || !adminReady) ? (
+              <View style={styles.fullscreenWaiting}>
+                <Text style={styles.fullscreenWaitingTitle}>
+                  {adminReady ? 'Connected to Admin' : 'Connected'}
+                </Text>
+                <Text style={[styles.fullscreenWaitingHint, adminSilent ? styles.controlDanger : null]}>
+                  {waitingHint}
+                </Text>
+              </View>
+            ) : null}
+          </>
         )}
       </Pressable>
+
+      {reconnecting ? (
+        <View pointerEvents="none" style={styles.reconnectPill}>
+          <ActivityIndicator size="small" color="#E8EAED" />
+          <Text style={styles.reconnectText}>Reconnecting…</Text>
+        </View>
+      ) : null}
 
       {controlsVisible ? (
         <View style={styles.controlsSheet}>
@@ -277,6 +363,9 @@ function FullScreenProjector({
               <Text style={styles.controlText}>Hide</Text>
             </Pressable>
           </View>
+          <Text style={styles.controlMeta}>
+            {APP_BUILD} · {adminReady ? 'Admin connected' : 'waiting for Admin'} · {Math.round(width)}×{Math.round(height)}
+          </Text>
           <ProjectorDropZone onImage={onLocalImage} onCode={onLocalCode} />
         </View>
       ) : null}
@@ -296,7 +385,8 @@ const styles = StyleSheet.create({
     paddingBottom: Spacing.six,
     gap: Spacing.four,
   },
-  topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: Spacing.two },
+  build: { fontSize: 11, marginLeft: 'auto' },
   lockBtn: { borderWidth: 1, borderRadius: 10, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   heading: { gap: Spacing.two, maxWidth: 760 },
   title: { fontSize: 44, lineHeight: 50 },
@@ -349,5 +439,20 @@ const styles = StyleSheet.create({
   },
   controlText: { color: '#F4F6F8', fontSize: 14, fontWeight: '600' },
   controlDanger: { color: '#FF7A70' },
+  controlMeta: { color: '#8A93A0', fontSize: 12 },
+  decoding: { opacity: 0 },
+  reconnectPill: {
+    position: 'absolute',
+    top: Spacing.three,
+    alignSelf: 'center',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.two,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.one,
+    borderRadius: 999,
+    backgroundColor: 'rgba(21,25,30,0.85)',
+  },
+  reconnectText: { color: '#E8EAED', fontSize: 13 },
   localPreviewImage: { width: '100%', height: 220, borderRadius: 10, backgroundColor: '#05070A' },
 });

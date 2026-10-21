@@ -54,6 +54,10 @@ export class SignalClient {
     });
   }
 
+  isOpen(): boolean {
+    return this.ws?.readyState === WebSocket.OPEN;
+  }
+
   send(msg: object): void {
     if (this.ws?.readyState === WebSocket.OPEN) {
       this.ws.send(JSON.stringify(msg));

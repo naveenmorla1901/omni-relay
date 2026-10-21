@@ -17,6 +17,9 @@ const EXTRA_ACCESS_KEYS = (process.env.EXPO_PUBLIC_ACCESS_KEYS ?? '')
 /** The built-in key always works; env vars can add extra keys at build time. */
 export const ACCESS_KEYS = Array.from(new Set([ACCESS_KEY, ...EXTRA_ACCESS_KEYS]));
 
+/** Shown in every role's top bar so stale tabs/APKs are obvious. Bump with each `v*` tag. */
+export const APP_BUILD = 'v0.1.10';
+
 export const CONFIG = {
   /** Low FPS is intentional: preserve pixels for photographed text. Encoder cap only. */
   TARGET_FPS: 8,
@@ -63,6 +66,19 @@ export const CONFIG = {
   /** Live stage edits are batched so a drag sends a frame, not a flood. */
   STAGE_SEND_DEBOUNCE_MS: 250,
   STAGE_PREVIEW_MAX_HEIGHT: 560,
+  /** Projector re-reports its screen until Admin answers `stage-ready`. */
+  STAGE_VIEWPORT_RETRY_MS: 3_000,
+  /** Projector warns when no current Admin has answered in this time. */
+  STAGE_READY_TIMEOUT_MS: 8_000,
+  /** Projector re-reports its screen this often so a lost relay slot is noticed. */
+  STAGE_HEARTBEAT_MS: 15_000,
+  /** Admin warns when the Projector has not confirmed a frame in this time. */
+  STAGE_ACK_TIMEOUT_MS: 6_000,
+  /** Recorder/Projector rejoin the room after the relay socket drops (backoff). */
+  RECONNECT_BASE_MS: 1_000,
+  RECONNECT_MAX_MS: 15_000,
+  /** A Link A ICE `disconnected` lasting this long is treated as failed and re-offered. */
+  LINK_DISCONNECT_GRACE_MS: 4_000,
   DATACHANNEL_CHUNK: 16 * 1024,
   DC_HIGH_WATER: 1 * 1024 * 1024,
   HEARTBEAT_MS: 2000,

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { CSSProperties, PointerEvent as ReactPointerEvent } from 'react';
+import type { CSSProperties, DragEvent as ReactDragEvent, PointerEvent as ReactPointerEvent } from 'react';
 
-import { CONFIG } from '@/config';
+import { APP_BUILD, CONFIG } from '@/config';
 import { useTheme } from '@/hooks/use-theme';
 import {
   clamp,
@@ -10,82 +10,91 @@ import {
   DEFAULT_VIEWPORT,
   EMPTY_SCENE,
   fillScaleFactor,
+  hitImage,
+  imageRect,
+  layoutText,
   MAX_IMAGE_SCALE,
   MAX_TEXT_SIZE,
   MIN_IMAGE_SCALE,
   MIN_TEXT_SIZE,
   renderStage,
   stageAspect,
+  stageFont,
   stageOutputSize,
+  zoomImageAt,
 } from '@/lib/stage';
-import type { ImageRotation, StageScene, StageShape, Viewport } from '@/lib/stage';
+import type { ImageRotation, StageScene, StageTextLayer } from '@/lib/stage';
 
-type Props = {
-  /** Projector screen; null until it reports (a typical phone is assumed). */
-  viewport: Viewport | null;
-  projectorReady: boolean;
-  /** Admin's selected capture, offered as a one-click image source. */
-  captureDataUrl: string | null;
-  onFrame: (dataUrl: string, width: number, height: number) => void;
-  onClear: () => void;
-};
+import type { ProjectorStageProps } from './projector-stage.types';
 
 type DragTarget = 'image' | 'text';
 
-const BEZEL = 10;
-const SHAPES: { value: StageShape; label: string }[] = [
-  { value: 'projector', label: 'Phone screen' },
-  { value: '9:16', label: '9:16' },
-  { value: '3:4', label: '3:4' },
-  { value: '1:1', label: '1:1' },
-];
+/** Phone body around the screen, in CSS px. */
+const BEZEL = 12;
 const TEXT_COLORS = [
   { value: '#FFFFFF', label: 'White' },
   { value: '#000000', label: 'Black' },
   { value: '#FFD60A', label: 'Yellow' },
 ];
+const ZOOM_STEP = 1.25;
 
 /**
- * Admin's phone-shaped Projector stage. Whatever is inside the frame is
- * rendered at the Projector's physical resolution and shown full-screen there.
- * Drag to move, wheel/pinch to zoom; drop, paste, or choose images; type text.
+ * Admin's phone-shaped Projector stage. Whatever is inside the phone screen is
+ * rendered at the Projector's physical resolution and shown there full-screen,
+ * live: every settled edit is sent, there is no Send button.
  */
-export function ProjectorStage({ viewport, projectorReady, captureDataUrl, onFrame, onClear }: Props) {
+export function ProjectorStage({
+  viewport,
+  projectorReady,
+  captureDataUrl,
+  onFrame,
+  onClear,
+  resendToken,
+  lastAckId,
+  maxPreviewHeight = CONFIG.STAGE_PREVIEW_MAX_HEIGHT,
+}: ProjectorStageProps) {
   const theme = useTheme();
   const [scene, setScene] = useState<StageScene>(EMPTY_SCENE);
   const [imageEl, setImageEl] = useState<HTMLImageElement | null>(null);
-  const [shape, setShape] = useState<StageShape>('projector');
   const [rotated, setRotated] = useState(false);
   const [target, setTarget] = useState<DragTarget>('image');
-  const [live, setLive] = useState(true);
   const [fileDragging, setFileDragging] = useState(false);
-  const [status, setStatus] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [sentId, setSentId] = useState<string | null>(null);
+  const [ackLate, setAckLate] = useState(false);
   const [containerWidth, setContainerWidth] = useState(320);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const dragDepthRef = useRef(0);
   const pointersRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchRef = useRef<{ distance: number; value: number } | null>(null);
+  const sentEmptyRef = useRef(true);
   const sceneRef = useRef(scene);
+  const targetRef = useRef(target);
   useEffect(() => {
     sceneRef.current = scene;
-  }, [scene]);
+    targetRef.current = target;
+  }, [scene, target]);
 
   const vp = viewport ?? DEFAULT_VIEWPORT;
-  const aspect = stageAspect(vp, shape, rotated);
+  const aspect = stageAspect(vp, 'projector', rotated);
   const outputSize = stageOutputSize(vp, aspect, CONFIG.STAGE_MAX_LONG_SIDE);
-  const hasContent = Boolean(scene.image || (scene.text && scene.text.text.trim() !== ''));
+  const hasText = Boolean(scene.text && scene.text.text.trim() !== '');
+  const hasContent = Boolean(scene.image || hasText);
 
-  // Fit the phone frame inside the pane width and the preview height cap.
-  let cssWidth = Math.max(120, containerWidth - BEZEL * 2);
+  // Fit the phone inside the pane width and the available height.
+  let cssWidth = Math.max(120, Math.min(containerWidth, 440) - BEZEL * 2);
   let cssHeight = cssWidth / aspect;
-  if (cssHeight > CONFIG.STAGE_PREVIEW_MAX_HEIGHT) {
-    cssHeight = CONFIG.STAGE_PREVIEW_MAX_HEIGHT;
+  const heightCap = Math.max(240, maxPreviewHeight);
+  if (cssHeight > heightCap) {
+    cssHeight = heightCap;
     cssWidth = cssHeight * aspect;
   }
   cssWidth = Math.round(cssWidth);
   cssHeight = Math.round(cssHeight);
-  const radius = shape === 'projector' ? Math.round(Math.min(cssWidth, cssHeight) * 0.09) : 6;
+  const shortSide = Math.min(cssWidth, cssHeight);
+  const radius = Math.round(shortSide * 0.12);
 
   useEffect(() => {
     const el = containerRef.current;
@@ -98,6 +107,11 @@ export function ProjectorStage({ viewport, projectorReady, captureDataUrl, onFra
     return () => observer.disconnect();
   }, []);
 
+  const flash = useCallback((message: string) => {
+    setNotice(message);
+    setTimeout(() => setNotice((current) => (current === message ? null : current)), 3500);
+  }, []);
+
   // ── Content sources ──────────────────────────────────────────────────────
 
   const loadImage = useCallback((src: string) => {
@@ -107,17 +121,22 @@ export function ProjectorStage({ viewport, projectorReady, captureDataUrl, onFra
       setScene((s) => ({ ...s, image: createImageLayer(src, img.naturalWidth, img.naturalHeight) }));
       setTarget('image');
     };
+    img.onerror = () => flash('That image could not be opened here. Try a JPEG or PNG.');
     img.src = src;
-  }, []);
+  }, [flash]);
 
   const readFile = useCallback((file: File | null | undefined) => {
-    if (!file || !file.type.startsWith('image/')) return;
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      flash(`${file.name || 'That file'} is not an image.`);
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof reader.result === 'string') loadImage(reader.result);
     };
     reader.readAsDataURL(file);
-  }, [loadImage]);
+  }, [flash, loadImage]);
 
   const setText = useCallback((text: string) => {
     setScene((s) => {
@@ -164,8 +183,21 @@ export function ProjectorStage({ viewport, projectorReady, captureDataUrl, onFra
     canvas.width = Math.round(cssWidth * dpr);
     canvas.height = Math.round(cssHeight * dpr);
     const ctx = canvas.getContext('2d');
-    if (ctx) renderStage(ctx, scene, imageEl, canvas.width, canvas.height);
-  }, [cssHeight, cssWidth, imageEl, scene]);
+    if (!ctx) return;
+    renderStage(ctx, scene, imageEl, canvas.width, canvas.height);
+    // Editor-only outline of the layer that drag/zoom will move.
+    const outline = selectionBox(ctx, scene, target, canvas.width, canvas.height);
+    if (outline) {
+      ctx.save();
+      ctx.strokeStyle = theme.accent;
+      ctx.lineWidth = Math.max(1, dpr * 1.5);
+      ctx.setLineDash([6 * dpr, 4 * dpr]);
+      ctx.translate(outline.cx, outline.cy);
+      ctx.rotate(outline.angle);
+      ctx.strokeRect(-outline.w / 2, -outline.h / 2, outline.w, outline.h);
+      ctx.restore();
+    }
+  }, [cssHeight, cssWidth, imageEl, scene, target, theme.accent]);
 
   /** Render at Projector pixels, turned back to its orientation when the frame is sideways. */
   const renderOutput = useCallback(() => {
@@ -195,86 +227,139 @@ export function ProjectorStage({ viewport, projectorReady, captureDataUrl, onFra
     };
   }, [aspect, imageEl, rotated, scene, vp]);
 
-  const sendNow = useCallback(() => {
-    const out = renderOutput();
-    if (!out) return;
-    onFrame(out.dataUrl, out.width, out.height);
-    setStatus('Sent');
-    setTimeout(() => setStatus(null), 1500);
-  }, [onFrame, renderOutput]);
-
-  // Live mode mirrors every settled edit to the Projector.
+  // Always live: every settled edit (and every Projector rejoin) goes out.
   useEffect(() => {
-    if (!live || !projectorReady || !hasContent) return;
+    if (!projectorReady) return;
     const timer = setTimeout(() => {
+      if (!hasContent) {
+        if (!sentEmptyRef.current) onClear();
+        sentEmptyRef.current = true;
+        setSentId(null);
+        return;
+      }
       const out = renderOutput();
-      if (out) onFrame(out.dataUrl, out.width, out.height);
+      if (!out) return;
+      const id = onFrame(out.dataUrl, out.width, out.height);
+      if (id) {
+        sentEmptyRef.current = false;
+        setSentId(id);
+        setAckLate(false);
+      }
     }, CONFIG.STAGE_SEND_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [hasContent, live, onFrame, projectorReady, renderOutput]);
+  }, [hasContent, onClear, onFrame, projectorReady, renderOutput, resendToken]);
+
+  // A re-joined Projector starts blank, so forget what we think it shows.
+  useEffect(() => {
+    sentEmptyRef.current = true;
+  }, [resendToken]);
+
+  const confirmed = sentId !== null && lastAckId === sentId;
+  useEffect(() => {
+    if (!sentId || confirmed) return;
+    const timer = setTimeout(() => setAckLate(true), CONFIG.STAGE_ACK_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [confirmed, sentId]);
 
   const clearScreen = useCallback(() => {
     setScene((s) => ({ ...EMPTY_SCENE, background: s.background }));
     setImageEl(null);
-    onClear();
-  }, [onClear]);
+    setTarget('image');
+  }, []);
 
   // ── Direct manipulation ─────────────────────────────────────────────────
 
-  const moveBy = useCallback((dx: number, dy: number) => {
+  /** Pointer position as a fraction of the stage. */
+  const stagePoint = (clientX: number, clientY: number) => {
+    const rect = canvasRef.current?.getBoundingClientRect();
+    if (!rect || rect.width === 0 || rect.height === 0) return { fx: 0.5, fy: 0.5 };
+    return { fx: (clientX - rect.left) / rect.width, fy: (clientY - rect.top) / rect.height };
+  };
+
+  /** Text wins when the pointer is on it; otherwise the image. */
+  const pickTarget = (fx: number, fy: number): DragTarget | null => {
+    const s = sceneRef.current;
+    const canvas = canvasRef.current;
+    const ctx = canvas?.getContext('2d');
+    if (ctx && canvas && s.text && s.text.text.trim() !== '') {
+      const box = textBox(ctx, s.text, canvas.width, canvas.height);
+      const px = fx * canvas.width;
+      const py = fy * canvas.height;
+      const pad = canvas.width * 0.02;
+      if (px >= box.x - pad && px <= box.x + box.w + pad && py >= box.y - pad && py <= box.y + box.h + pad) {
+        return 'text';
+      }
+    }
+    if (s.image && canvas && hitImage(s.image, canvas.width, canvas.height, fx * canvas.width, fy * canvas.height)) {
+      return 'image';
+    }
+    return s.image ? 'image' : s.text ? 'text' : null;
+  };
+
+  const moveBy = useCallback((layer: DragTarget, dx: number, dy: number) => {
     setScene((s) => {
-      if (target === 'image' && s.image) {
+      if (layer === 'image' && s.image) {
         return {
           ...s,
           image: { ...s.image, cx: clamp(s.image.cx + dx, -0.5, 1.5), cy: clamp(s.image.cy + dy, -0.5, 1.5) },
         };
       }
-      if (target === 'text' && s.text) {
+      if (layer === 'text' && s.text) {
         return { ...s, text: { ...s.text, x: clamp(s.text.x + dx, 0, 0.9), y: clamp(s.text.y + dy, 0, 0.95) } };
       }
       return s;
     });
-  }, [target]);
+  }, []);
 
-  const setZoomValue = useCallback((value: number) => {
+  /** Zoom the image toward a stage point, or resize the text. */
+  const zoomLayer = useCallback((layer: DragTarget, value: number, fx = 0.5, fy = 0.5) => {
     setScene((s) => {
-      if (target === 'image' && s.image) {
-        return { ...s, image: { ...s.image, scale: clamp(value, MIN_IMAGE_SCALE, MAX_IMAGE_SCALE) } };
-      }
-      if (target === 'text' && s.text) {
+      if (layer === 'image' && s.image) return { ...s, image: zoomImageAt(s.image, value, fx, fy) };
+      if (layer === 'text' && s.text) {
         return { ...s, text: { ...s.text, size: clamp(value, MIN_TEXT_SIZE, MAX_TEXT_SIZE) } };
       }
       return s;
     });
-  }, [target]);
+  }, []);
 
-  const currentZoomValue = useCallback(() => {
+  const zoomValue = (layer: DragTarget) => {
     const s = sceneRef.current;
-    return target === 'image' ? s.image?.scale ?? 1 : s.text?.size ?? MIN_TEXT_SIZE;
-  }, [target]);
+    return layer === 'image' ? s.image?.scale ?? 1 : s.text?.size ?? MIN_TEXT_SIZE;
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const onWheel = (event: WheelEvent) => {
-      if (!hasContent) return;
+      const s = sceneRef.current;
+      if (!s.image && !s.text) return;
       event.preventDefault();
-      setZoomValue(currentZoomValue() * Math.exp(-event.deltaY * 0.0015));
+      const rect = canvas.getBoundingClientRect();
+      const fx = (event.clientX - rect.left) / rect.width;
+      const fy = (event.clientY - rect.top) / rect.height;
+      const layer: DragTarget = targetRef.current === 'text' && s.text ? 'text' : s.image ? 'image' : 'text';
+      const current = layer === 'image' ? s.image?.scale ?? 1 : s.text?.size ?? MIN_TEXT_SIZE;
+      zoomLayer(layer, current * Math.exp(-event.deltaY * 0.0015), fx, fy);
     };
     canvas.addEventListener('wheel', onWheel, { passive: false });
     return () => canvas.removeEventListener('wheel', onWheel);
-  }, [currentZoomValue, hasContent, setZoomValue]);
+  }, [zoomLayer]);
 
-  const pointerDistance = () => {
+  const pointerPair = () => {
     const [a, b] = Array.from(pointersRef.current.values());
-    return a && b ? Math.hypot(a.x - b.x, a.y - b.y) : 0;
+    return a && b ? { distance: Math.hypot(a.x - b.x, a.y - b.y), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : null;
   };
 
   const onPointerDown = (event: ReactPointerEvent<HTMLCanvasElement>) => {
     event.currentTarget.setPointerCapture(event.pointerId);
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
-    if (pointersRef.current.size === 2) {
-      pinchRef.current = { distance: pointerDistance(), value: currentZoomValue() };
+    if (pointersRef.current.size === 1) {
+      const { fx, fy } = stagePoint(event.clientX, event.clientY);
+      const picked = pickTarget(fx, fy);
+      if (picked) setTarget(picked);
+    } else if (pointersRef.current.size === 2) {
+      const pair = pointerPair();
+      if (pair) pinchRef.current = { distance: pair.distance, value: zoomValue(target) };
     }
   };
 
@@ -284,10 +369,14 @@ export function ProjectorStage({ viewport, projectorReady, captureDataUrl, onFra
     pointersRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
     const pinch = pinchRef.current;
     if (pinch && pointersRef.current.size >= 2) {
-      if (pinch.distance > 0) setZoomValue(pinch.value * (pointerDistance() / pinch.distance));
+      const pair = pointerPair();
+      if (pair && pinch.distance > 0) {
+        const { fx, fy } = stagePoint(pair.x, pair.y);
+        zoomLayer(target, pinch.value * (pair.distance / pinch.distance), fx, fy);
+      }
       return;
     }
-    moveBy((event.clientX - previous.x) / cssWidth, (event.clientY - previous.y) / cssHeight);
+    moveBy(target, (event.clientX - previous.x) / cssWidth, (event.clientY - previous.y) / cssHeight);
   };
 
   const onPointerUp = (event: ReactPointerEvent<HTMLCanvasElement>) => {
@@ -305,6 +394,16 @@ export function ProjectorStage({ viewport, projectorReady, captureDataUrl, onFra
       s.image ? { ...s, image: { ...s.image, cx: 0.5, cy: 0.5, scale: fillScaleFactor(s.image, aspect) } } : s,
     );
 
+  const centerImage = () =>
+    setScene((s) => (s.image ? { ...s, image: { ...s.image, cx: 0.5, cy: 0.5 } } : s));
+
+  const toggleFitFill = () => {
+    const image = sceneRef.current.image;
+    if (!image) return;
+    if (Math.abs(image.scale - 1) < 0.01 && image.cx === 0.5 && image.cy === 0.5) fillImage();
+    else fitImage();
+  };
+
   const rotateImage = () =>
     setScene((s) =>
       s.image ? { ...s, image: { ...s.image, rotation: ((s.image.rotation + 90) % 360) as ImageRotation } } : s,
@@ -321,6 +420,33 @@ export function ProjectorStage({ viewport, projectorReady, captureDataUrl, onFra
     setTarget('image');
   };
 
+  const openFilePicker = () => fileInputRef.current?.click();
+
+  // ── Drag and drop anywhere on the stage panel ───────────────────────────
+
+  const onDrop = (event: ReactDragEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    dragDepthRef.current = 0;
+    setFileDragging(false);
+    const file = event.dataTransfer.files?.[0];
+    if (file) {
+      readFile(file);
+      return;
+    }
+    const uri = event.dataTransfer.getData('text/uri-list');
+    if (uri && /^(https?:|data:image\/)/.test(uri)) {
+      void loadRemoteImage(uri).then(loadImage, () =>
+        flash('That website does not allow copying its image. Save it, then drop the file.'),
+      );
+      return;
+    }
+    const text = event.dataTransfer.getData('text/plain');
+    if (text.trim()) {
+      setText(text);
+      setTarget('text');
+    }
+  };
+
   // ── UI ──────────────────────────────────────────────────────────────────
 
   const button = (active = false, disabled = false, color?: string): CSSProperties => ({
@@ -334,13 +460,37 @@ export function ProjectorStage({ viewport, projectorReady, captureDataUrl, onFra
     font: 'inherit',
     fontSize: 13,
     fontWeight: active ? 600 : 400,
+    whiteSpace: 'nowrap',
   });
   const row: CSSProperties = { display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' };
-  const label: CSSProperties = { fontSize: 12, fontWeight: 600, color: theme.textSecondary, minWidth: 64 };
-  const imageZoomLog = Math.log(scene.image?.scale ?? 1);
+  const label: CSSProperties = { fontSize: 12, fontWeight: 600, color: theme.textSecondary, minWidth: 52 };
+  const imageScale = scene.image?.scale ?? 1;
+  const portraitFrame = cssHeight >= cssWidth;
+
+  const status = !projectorReady
+    ? { color: theme.textSecondary, text: 'Projector not connected — enter the session code on your phone.' }
+    : !hasContent
+      ? { color: theme.success, text: 'Live · Projector is blank. Add an image or type text.' }
+      : confirmed
+        ? { color: theme.success, text: 'Live · showing on the Projector' }
+        : ackLate
+          ? { color: theme.danger, text: `The Projector has not confirmed. Check it shows ${APP_BUILD} in its tap menu and is still connected.` }
+          : { color: theme.textSecondary, text: 'Live · sending…' };
 
   return (
     <div
+      ref={containerRef}
+      onDragEnter={(event) => {
+        event.preventDefault();
+        dragDepthRef.current += 1;
+        setFileDragging(true);
+      }}
+      onDragOver={(event) => event.preventDefault()}
+      onDragLeave={() => {
+        dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+        if (dragDepthRef.current === 0) setFileDragging(false);
+      }}
+      onDrop={onDrop}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -349,51 +499,33 @@ export function ProjectorStage({ viewport, projectorReady, captureDataUrl, onFra
         fontSize: 13,
         color: theme.text,
       }}>
-      <div style={{ fontSize: 12, color: theme.textSecondary }}>
-        {viewport
-          ? `Projector screen ${Math.round(vp.w)}×${Math.round(vp.h)} @${Math.round(vp.dpr * 100) / 100}x · sends ${rotated ? outputSize.height : outputSize.width}×${rotated ? outputSize.width : outputSize.height}`
-          : projectorReady
-            ? 'Waiting for the Projector to report its screen…'
-            : 'Projector not connected — previewing a typical phone screen.'}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12 }}>
+        <span style={{ width: 8, height: 8, borderRadius: 4, background: status.color, flex: 'none' }} />
+        <span style={{ color: status.color === theme.textSecondary ? theme.textSecondary : status.color }}>{status.text}</span>
       </div>
 
-      <div
-        ref={containerRef}
-        style={{ width: '100%' }}
-        onDragEnter={(event) => { event.preventDefault(); setFileDragging(true); }}
-        onDragOver={(event) => { event.preventDefault(); setFileDragging(true); }}
-        onDragLeave={() => setFileDragging(false)}
-        onDrop={(event) => {
-          event.preventDefault();
-          setFileDragging(false);
-          const file = event.dataTransfer.files?.[0];
-          if (file) {
-            readFile(file);
-            return;
-          }
-          const text = event.dataTransfer.getData('text/plain');
-          if (text.trim()) {
-            setText(text);
-            setTarget('text');
-          }
-        }}>
+      {/* Phone */}
+      <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0' }}>
         <div
           style={{
             position: 'relative',
-            margin: '0 auto',
-            width: cssWidth,
             padding: BEZEL,
             borderRadius: radius + BEZEL,
-            background: '#0D0F12',
-            boxShadow: `0 0 0 1px ${fileDragging ? theme.accent : theme.border}, 0 10px 28px rgba(0,0,0,0.28)`,
+            background: 'linear-gradient(145deg, #2A2E35, #0B0C0E 60%)',
+            boxShadow: `0 0 0 ${fileDragging ? 2 : 1}px ${fileDragging ? theme.accent : '#3A3F47'}, 0 18px 40px rgba(0,0,0,0.35)`,
           }}>
+          {/* Side buttons */}
+          <PhoneButton side={portraitFrame ? 'right' : 'bottom'} offset={0.22} length={0.14} />
+          <PhoneButton side={portraitFrame ? 'left' : 'top'} offset={0.18} length={0.08} />
+          <PhoneButton side={portraitFrame ? 'left' : 'top'} offset={0.3} length={0.08} />
           <canvas
             ref={canvasRef}
-            aria-label="Projector stage. Drag to move, scroll or pinch to zoom."
+            aria-label="Projector screen. Drag to move, scroll or pinch to zoom, double-click to switch Fit and Fill."
             onPointerDown={onPointerDown}
             onPointerMove={onPointerMove}
             onPointerUp={onPointerUp}
             onPointerCancel={onPointerUp}
+            onDoubleClick={toggleFitFill}
             style={{
               display: 'block',
               width: cssWidth,
@@ -402,6 +534,18 @@ export function ProjectorStage({ viewport, projectorReady, captureDataUrl, onFra
               touchAction: 'none',
               cursor: hasContent ? 'grab' : 'default',
               background: scene.background,
+            }}
+          />
+          {/* Camera cut-out */}
+          <div
+            style={{
+              position: 'absolute',
+              pointerEvents: 'none',
+              background: '#000',
+              borderRadius: 999,
+              ...(portraitFrame
+                ? { top: BEZEL + shortSide * 0.035, left: '50%', width: shortSide * 0.27, height: shortSide * 0.075, transform: 'translateX(-50%)' }
+                : { left: BEZEL + shortSide * 0.035, top: '50%', height: shortSide * 0.27, width: shortSide * 0.075, transform: 'translateY(-50%)' }),
             }}
           />
           {!hasContent || fileDragging ? (
@@ -414,42 +558,48 @@ export function ProjectorStage({ viewport, projectorReady, captureDataUrl, onFra
                 flexDirection: 'column',
                 alignItems: 'center',
                 justifyContent: 'center',
-                gap: 6,
-                padding: 16,
+                gap: 10,
+                padding: 20,
                 textAlign: 'center',
-                pointerEvents: 'none',
+                pointerEvents: fileDragging ? 'none' : 'auto',
                 color: scene.background === '#FFFFFF' ? '#5C6470' : '#A7B0BC',
-                border: fileDragging ? `2px dashed ${theme.accent}` : 'none',
+                border: `2px dashed ${fileDragging ? theme.accent : 'rgba(167,176,188,0.35)'}`,
+                background: fileDragging ? 'rgba(10,132,255,0.12)' : 'transparent',
               }}>
-              <div style={{ fontWeight: 600 }}>{fileDragging ? 'Release to place on the Projector' : 'Projector screen'}</div>
+              <div style={{ fontSize: 28, lineHeight: 1 }}>⤓</div>
+              <div style={{ fontWeight: 600, fontSize: 14 }}>
+                {fileDragging ? 'Drop to show it on the Projector' : 'Drop an image here'}
+              </div>
               {!fileDragging ? (
-                <div style={{ fontSize: 12 }}>Drop or paste an image, choose one below, or type text.</div>
+                <>
+                  <button
+                    type="button"
+                    onClick={openFilePicker}
+                    style={{ ...button(), background: theme.accent, color: theme.accentText, border: `1px solid ${theme.accent}`, fontWeight: 600 }}>
+                    Choose from files
+                  </button>
+                  <div style={{ fontSize: 12 }}>or paste with Ctrl+V · or type text below</div>
+                </>
               ) : null}
             </div>
           ) : null}
         </div>
       </div>
 
-      {/* Image */}
+      {notice ? <div style={{ fontSize: 12, color: theme.danger }}>{notice}</div> : null}
+
+      {/* Image editor */}
       <div style={row}>
         <span style={label}>Image</span>
-        <button type="button" style={button()} onClick={() => fileInputRef.current?.click()}>Choose…</button>
+        <button type="button" style={button()} onClick={openFilePicker}>
+          {scene.image ? 'Replace…' : 'Choose…'}
+        </button>
         <button
           type="button"
           style={button(false, !captureDataUrl)}
           disabled={!captureDataUrl}
           onClick={() => captureDataUrl && loadImage(captureDataUrl)}>
-          Use capture
-        </button>
-        <button type="button" style={button(false, !scene.image)} disabled={!scene.image} onClick={fitImage}>Fit</button>
-        <button type="button" style={button(false, !scene.image)} disabled={!scene.image} onClick={fillImage}>Fill</button>
-        <button type="button" style={button(false, !scene.image)} disabled={!scene.image} onClick={rotateImage}>↻ 90°</button>
-        <button
-          type="button"
-          style={button(false, !scene.image, theme.danger)}
-          disabled={!scene.image}
-          onClick={removeImage}>
-          Remove
+          Use selected capture
         </button>
         <input
           ref={fileInputRef}
@@ -463,24 +613,46 @@ export function ProjectorStage({ viewport, projectorReady, captureDataUrl, onFra
         />
       </div>
       {scene.image ? (
-        <div style={row}>
-          <span style={label}>Zoom</span>
-          <input
-            type="range"
-            min={Math.log(MIN_IMAGE_SCALE)}
-            max={Math.log(MAX_IMAGE_SCALE)}
-            step={0.01}
-            value={imageZoomLog}
-            onChange={(event) => {
-              const scale = Math.exp(Number(event.target.value));
-              setScene((s) => (s.image ? { ...s, image: { ...s.image, scale } } : s));
-            }}
-            style={{ flex: 1, minWidth: 120 }}
-          />
-          <span style={{ fontSize: 12, color: theme.textSecondary, width: 44 }}>
-            {Math.round((scene.image.scale ?? 1) * 100)}%
-          </span>
-        </div>
+        <>
+          <div style={row}>
+            <span style={label}>Zoom</span>
+            <button
+              type="button"
+              aria-label="Zoom out"
+              style={button()}
+              onClick={() => zoomLayer('image', imageScale / ZOOM_STEP)}>
+              −
+            </button>
+            <input
+              type="range"
+              aria-label="Image zoom"
+              min={Math.log(MIN_IMAGE_SCALE)}
+              max={Math.log(MAX_IMAGE_SCALE)}
+              step={0.01}
+              value={Math.log(imageScale)}
+              onChange={(event) => zoomLayer('image', Math.exp(Number(event.target.value)))}
+              style={{ flex: 1, minWidth: 90 }}
+            />
+            <button
+              type="button"
+              aria-label="Zoom in"
+              style={button()}
+              onClick={() => zoomLayer('image', imageScale * ZOOM_STEP)}>
+              +
+            </button>
+            <span style={{ fontSize: 12, color: theme.textSecondary, width: 42, textAlign: 'right' }}>
+              {Math.round(imageScale * 100)}%
+            </span>
+          </div>
+          <div style={row}>
+            <span style={label}>Shape</span>
+            <button type="button" style={button()} onClick={fitImage} title="Whole image visible">Fit</button>
+            <button type="button" style={button()} onClick={fillImage} title="Fill the phone screen, no bars">Fill</button>
+            <button type="button" style={button()} onClick={centerImage}>Center</button>
+            <button type="button" style={button()} onClick={rotateImage}>↻ 90°</button>
+            <button type="button" style={button(false, false, theme.danger)} onClick={removeImage}>Remove</button>
+          </div>
+        </>
       ) : null}
 
       {/* Text */}
@@ -492,8 +664,8 @@ export function ProjectorStage({ viewport, projectorReady, captureDataUrl, onFra
             setText(event.target.value);
             setTarget('text');
           }}
-          placeholder="Type or paste text to show on the Projector…"
-          rows={3}
+          placeholder="Type or paste text or code — it appears on the Projector as you type."
+          rows={4}
           style={{
             width: '100%',
             boxSizing: 'border-box',
@@ -508,17 +680,15 @@ export function ProjectorStage({ viewport, projectorReady, captureDataUrl, onFra
         />
         {scene.text ? (
           <div style={row}>
+            <span style={{ ...label, minWidth: 0 }}>Size</span>
             <input
               type="range"
               min={MIN_TEXT_SIZE}
               max={MAX_TEXT_SIZE}
               step={0.0025}
               value={scene.text.size}
-              onChange={(event) => {
-                const size = Number(event.target.value);
-                setScene((s) => (s.text ? { ...s, text: { ...s.text, size } } : s));
-              }}
-              style={{ flex: 1, minWidth: 100 }}
+              onChange={(event) => zoomLayer('text', Number(event.target.value))}
+              style={{ flex: 1, minWidth: 80 }}
               aria-label="Text size"
             />
             {TEXT_COLORS.map((color) => (
@@ -541,25 +711,9 @@ export function ProjectorStage({ viewport, projectorReady, captureDataUrl, onFra
         ) : null}
       </div>
 
-      {/* Frame */}
+      {/* Screen */}
       <div style={row}>
-        <span style={label}>Shape</span>
-        {SHAPES.map((option) => (
-          <button
-            key={option.value}
-            type="button"
-            style={button(shape === option.value)}
-            onClick={() => setShape(option.value)}>
-            {option.label}
-          </button>
-        ))}
-      </div>
-      <div style={row}>
-        <span style={label}>Direction</span>
-        <button type="button" style={button(rotated)} onClick={() => setRotated((value) => !value)}>
-          ↻ {aspect < 1 ? 'Portrait' : aspect > 1 ? 'Landscape' : 'Square'}
-        </button>
-        <span style={{ ...label, minWidth: 0, marginLeft: 8 }}>Background</span>
+        <span style={label}>Screen</span>
         <button
           type="button"
           style={button(scene.background === '#000000')}
@@ -572,53 +726,76 @@ export function ProjectorStage({ viewport, projectorReady, captureDataUrl, onFra
           onClick={() => setScene((s) => ({ ...s, background: '#FFFFFF' }))}>
           White
         </button>
-      </div>
-      <div style={row}>
-        <span style={label}>Drag moves</span>
-        <button
-          type="button"
-          style={button(target === 'image', !scene.image)}
-          disabled={!scene.image}
-          onClick={() => setTarget('image')}>
-          Image
+        <button type="button" style={button(rotated)} onClick={() => setRotated((value) => !value)}>
+          ⟳ {rotated ? 'Sideways' : 'Upright'}
         </button>
         <button
           type="button"
-          style={button(target === 'text', !scene.text)}
-          disabled={!scene.text}
-          onClick={() => setTarget('text')}>
-          Text
+          style={{ ...button(false, !hasContent, theme.danger), marginLeft: 'auto' }}
+          disabled={!hasContent}
+          onClick={clearScreen}>
+          Clear Projector
         </button>
       </div>
 
-      {/* Send */}
-      <div style={{ ...row, borderTop: `1px solid ${theme.border}`, paddingTop: 12 }}>
-        <label style={{ display: 'flex', alignItems: 'center', gap: 6, cursor: 'pointer' }}>
-          <input type="checkbox" checked={live} onChange={(event) => setLive(event.target.checked)} />
-          Live
-        </label>
-        <button
-          type="button"
-          style={{
-            ...button(false, !projectorReady || !hasContent),
-            background: theme.accent,
-            color: theme.accentText,
-            border: `1px solid ${theme.accent}`,
-            fontWeight: 600,
-          }}
-          disabled={!projectorReady || !hasContent}
-          onClick={sendNow}>
-          {status ?? 'Send now'}
-        </button>
-        <button type="button" style={button(false, false, theme.danger)} onClick={clearScreen}>
-          Clear screen
-        </button>
+      <div style={{ fontSize: 12, color: theme.textSecondary }}>
+        Drag to move · scroll or pinch to zoom · double-click switches Fit/Fill.
+        {viewport ? ` Sends ${rotated ? outputSize.height : outputSize.width}×${rotated ? outputSize.width : outputSize.height} px.` : ''}
       </div>
-      {!projectorReady ? (
-        <div style={{ fontSize: 12, color: theme.textSecondary }}>
-          Connect the Projector to this session to show the stage full-screen on it.
-        </div>
-      ) : null}
     </div>
   );
+}
+
+function PhoneButton({ side, offset, length }: { side: 'left' | 'right' | 'top' | 'bottom'; offset: number; length: number }) {
+  const vertical = side === 'left' || side === 'right';
+  const style: CSSProperties = {
+    position: 'absolute',
+    background: '#2A2E35',
+    borderRadius: 2,
+    ...(vertical
+      ? { top: `${offset * 100}%`, height: `${length * 100}%`, width: 3, [side]: -3 }
+      : { left: `${offset * 100}%`, width: `${length * 100}%`, height: 3, [side]: -3 }),
+  };
+  return <div style={style} />;
+}
+
+function textBox(ctx: CanvasRenderingContext2D, layer: StageTextLayer, width: number, height: number) {
+  ctx.save();
+  ctx.font = stageFont(layer, width);
+  const layout = layoutText(layer, width, height, (s) => ctx.measureText(s).width);
+  ctx.restore();
+  return { x: layout.left, y: layout.top, w: Math.max(layout.width, width * 0.05), h: layout.height };
+}
+
+/** Outline of the active layer in canvas pixels (centre, size, rotation). */
+function selectionBox(
+  ctx: CanvasRenderingContext2D,
+  scene: StageScene,
+  target: DragTarget,
+  width: number,
+  height: number,
+) {
+  // Only worth outlining when there are two layers to choose between.
+  if (!scene.image || !scene.text || scene.text.text.trim() === '') return null;
+  if (target === 'image') {
+    const rect = imageRect(scene.image, width, height);
+    return { cx: rect.cx, cy: rect.cy, w: rect.width, h: rect.height, angle: (rect.rotation * Math.PI) / 180 };
+  }
+  const box = textBox(ctx, scene.text, width, height);
+  return { cx: box.x + box.w / 2, cy: box.y + box.h / 2, w: box.w, h: box.h, angle: 0 };
+}
+
+/** Fetch a dropped web image as a data URL so the stage canvas stays exportable. */
+async function loadRemoteImage(uri: string): Promise<string> {
+  if (uri.startsWith('data:image/')) return uri;
+  const response = await fetch(uri, { mode: 'cors' });
+  if (!response.ok) throw new Error(String(response.status));
+  const blob = await response.blob();
+  if (!blob.type.startsWith('image/')) throw new Error('not an image');
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => (typeof reader.result === 'string' ? resolve(reader.result) : reject(new Error('read')));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
+  });
 }

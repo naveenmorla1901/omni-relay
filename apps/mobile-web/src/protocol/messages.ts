@@ -55,7 +55,11 @@ export type StageMsg =
   | { v: ProtocolVersion; t: 'viewport'; w: number; h: number; dpr: number }
   /** A rendered stage bitmap; `data` is raw base64 (no data-URL prefix). */
   | { v: ProtocolVersion; t: 'stage-frame'; id: string; mime: string; data: string; w: number; h: number }
-  | { v: ProtocolVersion; t: 'stage-clear' };
+  | { v: ProtocolVersion; t: 'stage-clear' }
+  /** Admin answers a `viewport`: its stage editor is open (older Admins never send it). */
+  | { v: ProtocolVersion; t: 'stage-ready' }
+  /** Projector confirms a `stage-frame` is decoded and on screen. */
+  | { v: ProtocolVersion; t: 'stage-ack'; id: string };
 
 export type ProtocolMessage = ControlMsg | DisplayPush | StageMsg;
 
@@ -156,7 +160,10 @@ function isStageMsg(value: Record<string, unknown>): value is StageMsg {
         isPositiveNumber(value.h)
       );
     case 'stage-clear':
+    case 'stage-ready':
       return true;
+    case 'stage-ack':
+      return isNonEmptyString(value.id);
     default:
       return false;
   }

@@ -50,6 +50,7 @@ export const MAX_IMAGE_SCALE = 8;
 export const MIN_TEXT_SIZE = 0.025;
 export const MAX_TEXT_SIZE = 0.2;
 const TEXT_PADDING = 0.04;
+const TEXT_TOP = 0.08;
 const LINE_HEIGHT = 1.3;
 const SANS_FONT = 'Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif';
 const MONO_FONT = 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace';
@@ -133,12 +134,51 @@ export function fillScaleFactor(
   return Math.max(imageAspect / aspect, aspect / imageAspect);
 }
 
+/** Drawn size and centre of the image layer in a `width`×`height` stage, before rotation. */
+export function imageRect(layer: StageImageLayer, width: number, height: number) {
+  const base = fitScale(layer, width, height) * layer.scale;
+  return {
+    cx: layer.cx * width,
+    cy: layer.cy * height,
+    width: layer.naturalWidth * base,
+    height: layer.naturalHeight * base,
+    rotation: layer.rotation,
+  };
+}
+
+/** Whether stage point (`px`, `py`) in pixels lands on the (rotated) image. */
+export function hitImage(layer: StageImageLayer, width: number, height: number, px: number, py: number): boolean {
+  const rect = imageRect(layer, width, height);
+  const angle = (-rect.rotation * Math.PI) / 180;
+  const dx = px - rect.cx;
+  const dy = py - rect.cy;
+  const x = dx * Math.cos(angle) - dy * Math.sin(angle);
+  const y = dx * Math.sin(angle) + dy * Math.cos(angle);
+  return Math.abs(x) <= rect.width / 2 && Math.abs(y) <= rect.height / 2;
+}
+
+/**
+ * Zoom the image to `scale`, keeping the stage point (`fx`, `fy`) — fractions
+ * of the stage — fixed, the way a photo editor zooms toward the cursor.
+ */
+export function zoomImageAt(layer: StageImageLayer, scale: number, fx: number, fy: number): StageImageLayer {
+  const next = clamp(scale, MIN_IMAGE_SCALE, MAX_IMAGE_SCALE);
+  const ratio = next / layer.scale;
+  return {
+    ...layer,
+    scale: next,
+    cx: clamp(fx - (fx - layer.cx) * ratio, -0.5, 1.5),
+    cy: clamp(fy - (fy - layer.cy) * ratio, -0.5, 1.5),
+  };
+}
+
 export function createImageLayer(src: string, naturalWidth: number, naturalHeight: number): StageImageLayer {
   return { src, naturalWidth, naturalHeight, cx: 0.5, cy: 0.5, scale: 1, rotation: 0 };
 }
 
 export function createTextLayer(text: string): StageTextLayer {
-  return { text, x: TEXT_PADDING, y: TEXT_PADDING, size: 0.06, color: '#FFFFFF', mono: false };
+  // Start below a phone's camera cut-out.
+  return { text, x: TEXT_PADDING, y: TEXT_TOP, size: 0.06, color: '#FFFFFF', mono: false };
 }
 
 export function stageFont(layer: Pick<StageTextLayer, 'size' | 'mono'>, stageWidth: number): string {
@@ -195,6 +235,37 @@ export function wrapText(text: string, maxWidth: number, measure: (s: string) =>
   return lines;
 }
 
+export type TextLayout = {
+  lines: string[];
+  left: number;
+  top: number;
+  lineHeight: number;
+  /** Bounding box of the wrapped block, in stage pixels. */
+  width: number;
+  height: number;
+};
+
+/** Wrap and place a text layer. `measure` must use the layer's `stageFont`. */
+export function layoutText(
+  layer: StageTextLayer,
+  width: number,
+  height: number,
+  measure: (s: string) => number,
+): TextLayout {
+  const left = layer.x * width;
+  const maxWidth = Math.max(1, width - left - TEXT_PADDING * width);
+  const lineHeight = layer.size * width * LINE_HEIGHT;
+  const lines = wrapText(layer.text, maxWidth, measure);
+  return {
+    lines,
+    left,
+    top: layer.y * height,
+    lineHeight,
+    width: lines.reduce((widest, line) => Math.max(widest, measure(line)), 0),
+    height: lines.length * lineHeight,
+  };
+}
+
 type DrawTarget = Pick<
   CanvasRenderingContext2D,
   | 'save'
@@ -226,14 +297,12 @@ export function renderStage(
 
   const layer = scene.image;
   if (layer && image) {
-    const base = fitScale(layer, width, height) * layer.scale;
-    const drawWidth = layer.naturalWidth * base;
-    const drawHeight = layer.naturalHeight * base;
+    const rect = imageRect(layer, width, height);
     ctx.save();
     if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
-    ctx.translate(layer.cx * width, layer.cy * height);
-    ctx.rotate((layer.rotation * Math.PI) / 180);
-    ctx.drawImage(image, -drawWidth / 2, -drawHeight / 2, drawWidth, drawHeight);
+    ctx.translate(rect.cx, rect.cy);
+    ctx.rotate((rect.rotation * Math.PI) / 180);
+    ctx.drawImage(image, -rect.width / 2, -rect.height / 2, rect.width, rect.height);
     ctx.restore();
   }
 
@@ -242,12 +311,9 @@ export function renderStage(
     ctx.font = stageFont(text, width);
     ctx.fillStyle = text.color;
     ctx.textBaseline = 'top';
-    const left = text.x * width;
-    const maxWidth = Math.max(1, width - left - TEXT_PADDING * width);
-    const lineHeight = text.size * width * LINE_HEIGHT;
-    const lines = wrapText(text.text, maxWidth, (s) => ctx.measureText(s).width);
-    lines.forEach((line, index) => {
-      ctx.fillText(line, left, text.y * height + index * lineHeight);
+    const layout = layoutText(text, width, height, (s) => ctx.measureText(s).width);
+    layout.lines.forEach((line, index) => {
+      ctx.fillText(line, layout.left, layout.top + index * layout.lineHeight);
     });
   }
   ctx.restore();

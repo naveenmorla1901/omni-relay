@@ -2,18 +2,11 @@ import { StyleSheet, View } from 'react-native';
 
 import { ThemedText } from '@/components/themed-text';
 import { Spacing } from '@/constants/theme';
-import type { Viewport } from '@/lib/stage';
 
-type Props = {
-  viewport: Viewport | null;
-  projectorReady: boolean;
-  captureDataUrl: string | null;
-  onFrame: (dataUrl: string, width: number, height: number) => void;
-  onClear: () => void;
-};
+import type { ProjectorStageProps } from './projector-stage.types';
 
 /** Native fallback: the stage editor renders with canvas, a browser feature. */
-export function ProjectorStage(_props: Props) {
+export function ProjectorStage(_props: ProjectorStageProps) {
   return (
     <View style={styles.box}>
       <ThemedText type="smallBold">Projector stage</ThemedText>

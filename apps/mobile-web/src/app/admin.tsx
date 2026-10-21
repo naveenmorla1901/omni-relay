@@ -18,8 +18,8 @@ import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { VideoView } from '@/components/video-view';
 import { isTextQualityResolution } from '@/camera/lenses';
-import { CONFIG } from '@/config';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { APP_BUILD, CONFIG } from '@/config';
+import { Spacing } from '@/constants/theme';
 import { usePairing } from '@/hooks/use-pairing';
 import { useTheme } from '@/hooks/use-theme';
 import { captureAndEnhanceVideo, rotateImage } from '@/lib/cv';
@@ -84,6 +84,9 @@ function AdminWorkspace() {
   const detectionIdRef = useRef(0);
   const cropIdRef = useRef(0);
   const wide = width >= 1000;
+  // The live feed takes the left of the screen, the phone stage the right.
+  const rightPaneWidth = Math.round(Math.min(560, Math.max(400, width * 0.32)));
+  const videoHeight = wide ? Math.max(380, Math.round(height - 190)) : Math.max(260, Math.round(width * 0.7));
   const recorderLive = pairing.phase === 'connected';
   const projectorReady = pairing.projectorJoined;
   const remoteLowResolution = Boolean(
@@ -304,122 +307,63 @@ function AdminWorkspace() {
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
         <ScrollView contentContainerStyle={styles.scroll}>
 
-          {/* ── Top bar ──────────────────────────────────────────── */}
-          <View style={styles.topbar}>
+          {/* ── Session bar ─────────────────────────────────────── */}
+          <View style={[styles.sessionBar, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
             <Link href="/" asChild>
               <Pressable accessibilityRole="button" hitSlop={12}>
-                <ThemedText type="smallBold" style={{ color: theme.accent }}>← All roles</ThemedText>
+                <ThemedText type="smallBold" style={{ color: theme.accent }}>← Roles</ThemedText>
               </Pressable>
             </Link>
-            <View style={styles.topbarRight}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={lock}
-                style={({ pressed }) => [
-                  styles.lockBtn,
-                  { backgroundColor: pressed ? theme.backgroundSelected : theme.backgroundElement, borderColor: theme.border },
-                ]}>
-                <ThemedText type="small" themeColor="textSecondary">Lock</ThemedText>
-              </Pressable>
-            </View>
-          </View>
+            <ThemedText type="smallBold" style={styles.barTitle}>Admin</ThemedText>
 
-          {/* ── Heading ──────────────────────────────────────────── */}
-          <View style={styles.heading}>
-            <ThemedText type="title" style={styles.title}>Admin</ThemedText>
-            <ThemedText themeColor="textSecondary" style={styles.subtitle}>
-              Create a session, share the code with Recorder and Projector, then watch and capture.
-            </ThemedText>
-          </View>
-
-          {/* ── Session panel ────────────────────────────────────── */}
-          <View style={[styles.sessionPanel, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
-
-            {/* Header row: status chips */}
-            <View style={styles.sessionHeader}>
-              <ThemedText type="smallBold">Session</ThemedText>
-              <View style={styles.chipRow}>
-                <DeviceChip label="Recorder" connected={pairing.recorderJoined} />
-                <DeviceChip label="Projector" connected={pairing.projectorJoined} />
+            {pairing.roomCode ? (
+              <View style={[styles.codePill, { borderColor: theme.border, backgroundColor: theme.background }]}>
+                <ThemedText type="small" themeColor="textSecondary">Code</ThemedText>
+                <ThemedText selectable style={[styles.barCode, { color: theme.text }]}>{pairing.roomCode}</ThemedText>
               </View>
-            </View>
-
-            {/* Idle / failed: create session button */}
-            {(pairing.phase === 'idle' || pairing.phase === 'failed') && (
-              <>
-                {pairing.phase === 'failed' && pairing.error ? (
-                  <View style={[styles.errorBox, { borderColor: theme.danger }]}>
-                    <ThemedText type="small" style={{ color: theme.danger }}>{pairing.error}</ThemedText>
-                  </View>
-                ) : null}
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => void pairing.createRoom()}
-                  style={({ pressed }) => [
-                    styles.primaryBtn,
-                    { backgroundColor: theme.accent, opacity: pressed ? 0.8 : 1 },
-                  ]}>
-                  <ThemedText type="smallBold" style={{ color: theme.accentText }}>
-                    Create session
-                  </ThemedText>
-                </Pressable>
-              </>
-            )}
-
-            {/* Creating: spinner */}
-            {pairing.phase === 'creating' && (
+            ) : pairing.phase === 'creating' ? (
               <View style={styles.row}>
                 <ActivityIndicator color={theme.accent} />
-                <ThemedText type="small" themeColor="textSecondary">Connecting to server…</ThemedText>
+                <ThemedText type="small" themeColor="textSecondary">Connecting…</ThemedText>
               </View>
+            ) : (
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => void pairing.createRoom()}
+                style={({ pressed }) => [styles.barBtn, { backgroundColor: theme.accent, borderColor: theme.accent, opacity: pressed ? 0.8 : 1 }]}>
+                <ThemedText type="smallBold" style={{ color: theme.accentText }}>Create session</ThemedText>
+              </Pressable>
             )}
 
-            {/* Room code — show while waiting or connected */}
-            {pairing.roomCode && pairing.phase !== 'idle' && pairing.phase !== 'creating' && (
-              <View style={[styles.codeBlock, { backgroundColor: theme.background, borderColor: theme.border }]}>
-                <ThemedText type="small" themeColor="textSecondary">Share this code</ThemedText>
-                <ThemedText style={[styles.bigCode, { color: theme.text, letterSpacing: 10 }]}>
-                  {pairing.roomCode}
-                </ThemedText>
-                <ThemedText type="small" themeColor="textSecondary">
-                  Enter it in the Recorder and Projector apps to connect.
-                </ThemedText>
-              </View>
-            )}
+            <DeviceChip
+              label={recorderLive ? 'Recorder · live' : pairing.recorderJoined ? 'Recorder · linking…' : 'Recorder'}
+              connected={pairing.recorderJoined || recorderLive}
+            />
+            <DeviceChip label="Projector" connected={projectorReady} />
 
-            {/* Waiting: device status details */}
-            {(pairing.phase === 'waiting-for-peer' || pairing.phase === 'exchanging' || pairing.phase === 'connecting') && (
-              <View style={styles.deviceStatusList}>
-                <DeviceStatusRow
-                  label="Recorder"
-                  joined={pairing.recorderJoined}
-                  note={pairing.phase === 'exchanging' && pairing.recorderJoined ? 'Pairing…' : undefined}
-                />
-                <DeviceStatusRow label="Projector" joined={pairing.projectorJoined} />
-              </View>
-            )}
-
-            {/* Connected */}
-            {pairing.phase === 'connected' && (
-              <View style={styles.row}>
-                <View style={[styles.dot, { backgroundColor: theme.success }]} />
-                <ThemedText type="small" style={{ color: theme.success }}>Session active</ThemedText>
-              </View>
-            )}
-
-            {/* End session button when a room exists */}
-            {pairing.roomCode && (
+            <View style={styles.barSpacer} />
+            <ThemedText type="code" themeColor="textSecondary" style={{ fontSize: 11 }}>{APP_BUILD}</ThemedText>
+            {pairing.roomCode ? (
               <Pressable
                 accessibilityRole="button"
                 onPress={() => pairing.reset()}
-                style={({ pressed }) => [
-                  styles.secondaryBtn,
-                  { borderColor: theme.border, backgroundColor: pressed ? theme.backgroundSelected : 'transparent' },
-                ]}>
-                <ThemedText type="smallBold">End session</ThemedText>
+                style={({ pressed }) => [styles.barBtn, { borderColor: theme.border, backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}>
+                <ThemedText type="small">End session</ThemedText>
               </Pressable>
-            )}
+            ) : null}
+            <Pressable
+              accessibilityRole="button"
+              onPress={lock}
+              style={({ pressed }) => [styles.barBtn, { borderColor: theme.border, backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}>
+              <ThemedText type="small" themeColor="textSecondary">Lock</ThemedText>
+            </Pressable>
           </View>
+
+          {pairing.error ? (
+            <View style={[styles.errorBox, { borderColor: theme.danger }]}>
+              <ThemedText type="small" style={{ color: theme.danger }}>{pairing.error}</ThemedText>
+            </View>
+          ) : null}
 
           {/* ── Workspace ────────────────────────────────────────── */}
           <View style={[styles.workspace, wide && styles.workspaceWide]}>
@@ -433,16 +377,29 @@ function AdminWorkspace() {
                 </ThemedText>
               </View>
 
+              <View style={[styles.videoBox, { height: videoHeight, borderColor: theme.border }]}>
+                {recorderLive ? (
+                  <VideoView
+                    stream={pairing.remoteStream}
+                    placeholder="Waiting for camera…"
+                    mirror={pairing.remoteCameraMirrored}
+                    onVideoElement={attachVideoElement}
+                  />
+                ) : (
+                  <View style={styles.videoPlaceholder}>
+                    <ThemedText type="small" style={{ color: '#A7B0BC', textAlign: 'center' }}>
+                      {!pairing.roomCode
+                        ? 'Create a session, then enter its code on the Recorder phone.'
+                        : pairing.recorderJoined
+                          ? 'Recorder joined. Establishing video link…'
+                          : `Enter ${pairing.roomCode} on the Recorder phone to start the live feed.`}
+                    </ThemedText>
+                  </View>
+                )}
+              </View>
+
               {recorderLive ? (
                 <>
-                  <View style={[styles.videoBox, { borderColor: theme.border }]}>
-                    <VideoView
-                      stream={pairing.remoteStream}
-                      placeholder="Waiting for camera…"
-                      mirror={pairing.remoteCameraMirrored}
-                      onVideoElement={attachVideoElement}
-                    />
-                  </View>
 
                   {remoteLowResolution && remoteResolution && (
                     <View style={[styles.errorBox, { borderColor: theme.danger }]}>
@@ -646,17 +603,16 @@ function AdminWorkspace() {
                     </View>
                   )}
                 </>
-              ) : (
-                <ThemedText type="small" themeColor="textSecondary">
-                  {pairing.recorderJoined
-                    ? 'Recorder joined. Establishing video link…'
-                    : 'Live feed appears here once Recorder connects.'}
-                </ThemedText>
-              )}
+              ) : null}
             </View>
 
             {/* Right pane: phone-shaped Projector stage */}
-            <View style={[styles.pane, styles.paneRight, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
+            <View
+              style={[
+                styles.pane,
+                wide ? { width: rightPaneWidth } : null,
+                { backgroundColor: theme.backgroundElement, borderColor: theme.border },
+              ]}>
               <View style={styles.paneHeader}>
                 <ThemedText type="smallBold">Projector screen</ThemedText>
                 <ThemedText type="code" themeColor={projectorReady ? 'text' : 'textSecondary'}>
@@ -669,6 +625,9 @@ function AdminWorkspace() {
                 captureDataUrl={activeCapture?.dataUrl ?? null}
                 onFrame={pairing.sendStageFrame}
                 onClear={pairing.clearStage}
+                resendToken={pairing.projectorEpoch}
+                lastAckId={pairing.lastAckId}
+                maxPreviewHeight={wide ? height - 230 : 560}
               />
             </View>
           </View>
@@ -767,21 +726,6 @@ function DeviceChip({ label, connected }: { label: string; connected: boolean })
   );
 }
 
-function DeviceStatusRow({ label, joined, note }: { label: string; joined: boolean; note?: string }) {
-  const theme = useTheme();
-  return (
-    <View style={styles.deviceRow}>
-      <View style={[styles.dot, { backgroundColor: joined ? theme.success : theme.textSecondary }]} />
-      <ThemedText type="small" themeColor={joined ? 'text' : 'textSecondary'}>
-        {label}
-      </ThemedText>
-      <ThemedText type="small" themeColor="textSecondary" style={{ marginLeft: 'auto' }}>
-        {note ?? (joined ? 'Connected' : 'Waiting…')}
-      </ThemedText>
-    </View>
-  );
-}
-
 // ── Styles ─────────────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
@@ -789,39 +733,39 @@ const styles = StyleSheet.create({
   safe: { flex: 1 },
   scroll: {
     width: '100%',
-    maxWidth: MaxContentWidth,
-    alignSelf: 'center',
-    paddingHorizontal: Spacing.four,
-    paddingTop: Spacing.four,
-    paddingBottom: Spacing.six,
-    gap: Spacing.four,
+    paddingHorizontal: Spacing.three,
+    paddingTop: Spacing.three,
+    paddingBottom: Spacing.five,
+    gap: Spacing.three,
   },
-  topbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  topbarRight: { flexDirection: 'row', gap: Spacing.two },
-  lockBtn: { borderWidth: 1, borderRadius: 10, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
-  heading: { gap: Spacing.two, maxWidth: 760 },
-  title: { fontSize: 44, lineHeight: 50 },
-  subtitle: { fontSize: 17, lineHeight: 26 },
-  sessionPanel: { borderWidth: 1, borderRadius: 20, padding: Spacing.four, gap: Spacing.three },
-  sessionHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: Spacing.two },
-  chipRow: { flexDirection: 'row', gap: Spacing.two },
+  sessionBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flexWrap: 'wrap',
+    gap: Spacing.two,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+  },
+  barTitle: { fontSize: 16, marginRight: Spacing.two },
+  barSpacer: { flex: 1 },
+  barBtn: { borderWidth: 1, borderRadius: 8, paddingHorizontal: Spacing.three, paddingVertical: 6 },
+  codePill: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, borderWidth: 1, borderRadius: 8, paddingHorizontal: Spacing.three, paddingVertical: Spacing.one },
+  barCode: { fontSize: 20, lineHeight: 26, fontWeight: '700', fontFamily: 'monospace', letterSpacing: 4 },
   chip: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, borderWidth: 1, borderRadius: 999, paddingHorizontal: Spacing.three, paddingVertical: Spacing.one },
   dot: { width: 8, height: 8, borderRadius: 4 },
-  codeBlock: { borderWidth: 1, borderRadius: 16, padding: Spacing.four, alignItems: 'center', gap: Spacing.two },
-  bigCode: { fontSize: 42, fontWeight: '700', fontFamily: 'monospace' },
-  deviceStatusList: { gap: Spacing.two },
-  deviceRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, flexWrap: 'wrap' },
   errorBox: { borderWidth: 1, borderRadius: 10, padding: Spacing.three },
   primaryBtn: { alignSelf: 'flex-start', borderRadius: 10, paddingHorizontal: Spacing.four, paddingVertical: Spacing.three },
   secondaryBtn: { alignSelf: 'flex-start', borderWidth: 1, borderRadius: 10, paddingHorizontal: Spacing.four, paddingVertical: Spacing.three },
   workspace: { gap: Spacing.three },
   workspaceWide: { flexDirection: 'row', alignItems: 'stretch' },
-  pane: { borderWidth: 1, borderRadius: 20, padding: Spacing.four, gap: Spacing.three },
-  paneLeft: { flex: 2 },
-  paneRight: { flex: 1, minWidth: 340 },
+  pane: { borderWidth: 1, borderRadius: 16, padding: Spacing.three, gap: Spacing.three },
+  paneLeft: { flex: 1, minWidth: 0 },
   paneHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  videoBox: { height: 340, borderWidth: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: '#05070A' },
+  videoBox: { borderWidth: 1, borderRadius: 12, overflow: 'hidden', backgroundColor: '#05070A' },
+  videoPlaceholder: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: Spacing.four },
   galleryWrap: { borderWidth: 1, borderRadius: 14, padding: Spacing.three, gap: Spacing.two },
   galleryHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: Spacing.two },
   galleryClear: { borderRadius: 6, paddingHorizontal: Spacing.two, paddingVertical: Spacing.half },

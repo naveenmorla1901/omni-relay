@@ -1,7 +1,10 @@
+import { useKeepAwake } from 'expo-keep-awake';
 import { Link } from 'expo-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  AppState,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -17,7 +20,7 @@ import { AccessBoundary } from '@/components/access-boundary';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { VideoView } from '@/components/video-view';
-import { CONFIG } from '@/config';
+import { APP_BUILD, CONFIG } from '@/config';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { usePairing } from '@/hooks/use-pairing';
 import { useTheme } from '@/hooks/use-theme';
@@ -45,6 +48,11 @@ function RecorderWorkspace() {
   const [relockBusy, setRelockBusy] = useState(false);
   const cameraRef = useRef<ICameraSource | null>(null);
   const autoStartedRef = useRef(false);
+  const selectedDeviceIdRef = useRef('');
+  const restartingRef = useRef(false);
+  useEffect(() => {
+    selectedDeviceIdRef.current = selectedDeviceId;
+  }, [selectedDeviceId]);
 
   // ── Camera controls ────────────────────────────────────────────────────────
 
@@ -210,6 +218,58 @@ function RecorderWorkspace() {
 
   useEffect(() => () => { cameraRef.current?.stop(); }, []);
 
+  /**
+   * Bring the camera back after the OS took it away (screen off, app in the
+   * background). Same lens; the new track replaces the old one on Link A.
+   */
+  const restartCamera = useCallback(async () => {
+    const camera = cameraRef.current;
+    if (!camera || restartingRef.current) return;
+    restartingRef.current = true;
+    try {
+      camera.setFacingMode('environment');
+      await camera.start(selectedDeviceIdRef.current, {
+        width: CONFIG.CAPTURE_RESOLUTION.width,
+        height: CONFIG.CAPTURE_RESOLUTION.height,
+        fps: CONFIG.CAMERA_CAPTURE_FPS,
+      });
+      attachCameraStream(camera);
+      setCameraError(null);
+    } catch (err) {
+      setCameraError(`${cameraErrMsg(err)} Tap Start camera to try again.`);
+      setLocalStream(null);
+      setCameraSettings(null);
+    } finally {
+      restartingRef.current = false;
+    }
+  }, [attachCameraStream]);
+
+  // Android revokes the camera while the screen is off or the app is in the
+  // background; restart it as soon as the Recorder is visible again.
+  useEffect(() => {
+    let previous = AppState.currentState;
+    const subscription = AppState.addEventListener('change', (next) => {
+      const wasAway = previous !== 'active';
+      previous = next;
+      if (next !== 'active' || !wasAway) return;
+      const track = cameraRef.current?.getStream()?.getVideoTracks()[0];
+      if (!track) return;
+      if (Platform.OS !== 'web' || track.readyState === 'ended' || track.muted) void restartCamera();
+    });
+    return () => subscription.remove();
+  }, [restartCamera]);
+
+  // A track the browser/OS ends while we are visible (camera taken by another app).
+  useEffect(() => {
+    const track = localStream?.getVideoTracks()[0];
+    if (!track || typeof track.addEventListener !== 'function') return;
+    const onEnded = () => {
+      if (AppState.currentState === 'active') void restartCamera();
+    };
+    track.addEventListener('ended', onEnded);
+    return () => track.removeEventListener('ended', onEnded);
+  }, [localStream, restartCamera]);
+
   // Auto-start camera when pairing reaches connected.
   useEffect(() => {
     if (pairing.phase === 'connected' && !autoStartedRef.current) {
@@ -264,7 +324,20 @@ function RecorderWorkspace() {
               </Pressable>
             </Link>
             <View style={styles.topbarRight}>
-              <ConnChip connected={connected} label={connected ? 'Admin connected' : pairing.phase === 'failed' ? 'Failed' : 'Not connected'} danger={pairing.phase === 'failed'} />
+              <ThemedText type="code" themeColor="textSecondary" style={{ fontSize: 11 }}>{APP_BUILD}</ThemedText>
+              <ConnChip
+                connected={connected && !pairing.reconnecting}
+                label={
+                  pairing.reconnecting
+                    ? 'Reconnecting…'
+                    : connected
+                      ? 'Admin connected'
+                      : pairing.phase === 'failed'
+                        ? 'Failed'
+                        : 'Not connected'
+                }
+                danger={pairing.phase === 'failed'}
+              />
               <Pressable
                 accessibilityRole="button"
                 onPress={lock}
@@ -335,6 +408,15 @@ function RecorderWorkspace() {
             {/* Connected: camera controls */}
             {connected && (
               <>
+                <RecorderKeepAwake />
+                {pairing.reconnecting ? (
+                  <View style={styles.statusRow}>
+                    <ActivityIndicator color={theme.accent} />
+                    <ThemedText type="small" themeColor="textSecondary">
+                      Link to Admin dropped — reconnecting with the same code…
+                    </ThemedText>
+                  </View>
+                ) : null}
                 <View style={[styles.videoBox, { borderColor: theme.border }]}>
                   <VideoView
                     stream={localStream}
@@ -425,7 +507,8 @@ function RecorderWorkspace() {
                 )}
 
                 <ThemedText type="small" themeColor="textSecondary">
-                  Keep the phone steady. Low-FPS high-resolution mode — text clarity is the priority.
+                  Keep the phone steady. Low-FPS high-resolution mode — text clarity is the priority. The screen
+                  stays on while connected; if the phone sleeps anyway, the camera and link resume on their own.
                 </ThemedText>
 
                 <View style={styles.actionRow}>
@@ -496,6 +579,12 @@ function RecorderWorkspace() {
       </SafeAreaView>
     </ThemedView>
   );
+}
+
+/** Keeps the Recorder screen (and so the camera) on while a session is live. */
+function RecorderKeepAwake() {
+  useKeepAwake('clearrelay-recorder', { suppressDeactivateWarnings: true });
+  return null;
 }
 
 function ConnChip({ label, connected, danger }: { label: string; connected: boolean; danger: boolean }) {
