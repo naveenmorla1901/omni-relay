@@ -56,6 +56,8 @@ All devices must open the HTTPS URL and enter the access key first.
 
 If the network drops, the Recorder and Projector reconnect with the same code on their own.
 
+For the sharpest text, hold the Recorder phone square to the screen: when it is tilted, the far edge of the monitor falls out of focus. Admin sharpens soft regions automatically and tells you which edge was out of focus.
+
 Holding the Recorder phone sideways? Use **Rotate** (0° / 90° / 180° / 270°) above the Admin live feed; captures come out with the same rotation.
 
 > The deployed relay expires rooms 30 minutes after creation. Admin says so when it happens — start a new session and enter the new code.
