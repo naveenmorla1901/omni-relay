@@ -10,7 +10,7 @@
 **Current stop point:** The quality pass is implemented and local checks are green (typecheck, lint, 33 tests, web export). Admin captures the sharpest of three live frames, then runs contrast/brightness → percentile auto-levels → CLAHE → luma-only unsharp → JPEG 97%. The encoder ceiling is 16 Mbps, native encoder params are re-applied after a lens switch, and explicit lenses that deliver less than 1080p switch back to Auto with an explanation. Recorder and Admin both flag low-resolution streams. The downloaded samples contained three 4K captures and three 528×960/720×1280 lens captures; sharpening cannot recover the low-resolution set, so the lens floor is the important fix. APK v0.1.7 is tagged from `f890fba`. APK v0.1.8 adds the native 720p-reset fix and 30 fps sensor capture; the GitHub Actions build and real-device test are pending.
 **Next action:** Install APK v0.1.8 on the Android Recorder and confirm Admin reports 2160×3840 with no low-resolution warning (uninstall v0.1.6 if Android rejects the debug-keystore signature). Select each rear lens at close range: a 720p lens should snap back to Auto with the text-floor message, while a 4K lens should stay selected. Capture several close-up screens and inspect the sharpest-frame/CLAHE output. Then redeploy the Railway signaling relay from current `main` and re-run remote create/join/push.
 **As of commit:** `f890fba` (code commit for the capture-quality and low-resolution-lens guard; later docs/APK metadata commits follow)
-**Blocker:** the deployed Railway relay runs pre-M4 code — Admin→Projector `push` fails in production until `services/signaling` is redeployed. Real-device verification of the quality/lens/delete work is still pending. `react-native-webrtc` ignores advanced focus/exposure constraints on native, so Re-lock is only best-effort there; manual ISO/shutter/focus and native still-photo capture need a Vision Camera/Camera2 path. Some Android builds expose only one logical rear camera, and some explicit lenses only support 720p, so Ultra-wide may remain unavailable or be rejected by the text floor.
+**Blocker:** none for Link B — the deployed relay drops `push`, so the Projector stage rides the relay's `sdp` forward (`kind: 'stage'`), verified live. Real-device verification of the quality/lens/delete work is still pending. `react-native-webrtc` ignores advanced focus/exposure constraints on native, so Re-lock is only best-effort there; manual ISO/shutter/focus and native still-photo capture need a Vision Camera/Camera2 path. Some Android builds expose only one logical rear camera, and some explicit lenses only support 720p, so Ultra-wide may remain unavailable or be rejected by the text floor.
 
 ## How to update this file
 
@@ -87,19 +87,22 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 ### M4 — Admin → Projector (Link B)
 
 - [~] Second WebRTC session — deferred; using existing WS relay for push (already connected, sufficient for JPEG < 1 MB)
-- [x] Image push via WS relay (`push` message type in server.js + signal-ws.ts)
+- [x] Image push via WS relay (`push` message type in server.js + signal-ws.ts) — superseded: the deployed relay drops `push`
+- [x] Projector stage over the relay's `sdp` forward (`kind: 'stage'`): `viewport` (Projector → Admin), `stage-frame` / `stage-clear` (Admin → Projector); verified against the live relay
+- [x] Projector full-screen when connected: black stage, keep-awake, status bar hidden, tap for Full screen / Disconnect / local drop-paste
+- [x] Admin phone-shaped stage (`components/projector-stage.web.tsx`): exact Projector aspect, drop/paste/choose image or use capture, drag to move, wheel/pinch/slider zoom, Fit/Fill/rotate/remove, typed or pasted text (size, color, code font), shape presets, portrait/landscape direction, black/white background, Live auto-send + Send now + Clear screen
 - [x] Projector reassembles data-URL and renders image full-screen
 - [x] Projector keeps last image until next push
 - [x] Projector manual input (web): drag & drop image files, "Choose image…" picker, Ctrl+V image/code; local-only, no upload
 - [x] Projector local content is clearly labeled with "Show Admin content" / "Clear local content" controls; paste into the room-code field is ignored
-- [x] "Send to Projector" button — explicit user action, not auto-triggered on capture
+- [x] Admin content reaches the Projector only from the stage (Live toggle or Send now), never automatically on capture
 - [x] Right pane shows LINK B · READY / WAITING status
 - [ ] Code push from Admin (M7 — needs OCR/render pipeline first); local paste already displays code on the Projector
 - [ ] WebRTC data channel + chunking for large images (if WS relay becomes a bottleneck)
 
 ### M5 — CV enhancement pipeline
 
-- [x] `src/lib/cv.ts` — sharpest-of-3 capture → contrast/brightness → percentile auto-levels (0.5% clip) → CLAHE → luma-only unsharp mask → JPEG 97%
+- [x] `src/lib/cv.ts` — sharpest-of-5 capture → contrast/brightness → percentile auto-levels (0.5% clip) → CLAHE → luma-only unsharp mask → JPEG 97%
 - [x] `src/lib/image-quality.ts` — pure luma sharpness score, auto-levels, CLAHE (8×8 tiles, bilinear LUTs), and luma-only unsharp; tested in `image-quality.test.ts`
 - [x] `rotateImage()` — canvas-based 90/180/270/-90° JPEG rotation
 - [x] `contentHint='detail'` on camera track
@@ -170,7 +173,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 ## Admin / Projector UX
 
 - [x] Admin: left pane (flex:2) live feed + gallery + captured image preview
-- [x] Admin: right pane (flex:1) explicit send-to-Projector controls
+- [x] Admin: right pane is the phone-shaped Projector stage
 - [x] Admin: session panel with room code display and per-device status chips
 - [x] Admin: gallery thumbnail strip (horizontal scroll, max 20 captures)
 - [x] Admin: per-capture Delete, per-thumbnail Delete, and Clear all with a confirmation modal. Deleting the active frame selects the next capture or clears the preview and cancels in-flight detection/crop.
@@ -178,7 +181,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] Admin: Download, Detect again, Auto-crop toggle, Undo crop
 - [x] Admin: Image / Code tabs in send pane; send is explicit user action
 - [x] Admin: LINK B READY/WAITING status in right pane header
-- [x] Projector: 6-char code entry → "Connected to Admin" badge → full-screen image render
+- [x] Projector: 6-char code entry → true full-screen stage that mirrors Admin's phone frame
 - [x] Projector: drag/drop + file picker + paste image/code, visible even before joining (web); native shows a web-only hint
 - [x] Recorder: code entry → camera auto-starts on connect → Re-lock / Flip / Stop controls
 - [x] Recorder: front-camera flip mirrors the local preview and the Admin remote view
@@ -270,4 +273,5 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **2026-10-20** — Pushed `b9f9354` (code) + `d66f92a` (docs); CI and Deploy web green. Tagged `v0.1.5`; the Android workflow built and published `ClearRelay-v0.1.5.apk` (135 MB). Railway relay redeploy still pending.
 - **2026-10-20** — Admin delete/clear + physical lens picker: added per-capture Delete, per-thumbnail Delete, and Clear all with a confirmation modal; deleting the active frame selects the next or clears the preview and cancels in-flight detection/crop. Added `src/camera/lenses.ts` + tests to classify iPhone/Android lens labels and a Recorder lens picker (Auto 4K preferred, Ultra-wide, Main · high quality, Telephoto, numbered Android cameras). Added `setFacingMode`/`deviceId` to camera settings, mapped native `facing`, avoided the web enumerateDevices probe while streaming, and fall back to Auto if a lens switch fails. Checks: typecheck, lint, 26 tests, web export green. Code commit `01a7a59`.
 - **2026-10-20** — Pushed `214e9a5` (docs); CI and Deploy web green. Live bundle verified to contain the new Admin Delete/Clear all and Recorder Camera lens / Auto 4K / Ultra-wide / high-quality UI. Tagged `v0.1.6` at `01a7a59`; the Android workflow built and published `ClearRelay-v0.1.6.apk` (135,044,026 bytes). Railway relay redeploy and real-device verification still pending.
+- **2026-10-20** — Projector stage: confirmed the live relay silently drops `push` (Projector stuck on "Waiting for content"). Link B now uses the relay's `sdp` forward with `kind: 'stage'`. Projector goes full-screen and reports its viewport; Admin composes a phone-shaped stage (image drag/zoom/fit/fill/rotate, text, shape, direction, background) rendered at the Projector's physical pixels and sent live. Capture now keeps the sharpest of five frames. Checks: typecheck, lint, 47 tests, web export green; Admin↔Projector verified in Chrome against the live relay.
 - **2026-10-20** — Capture-quality pass from 12 downloaded samples. Found six captures: three at 2160×3840 (readable but soft/moiré) and three explicit-lens captures at 528×960/720×1280 (unrecoverable). Added sharpest-of-3 capture, CLAHE, luma-only unsharp mask, JPEG 97, a 16 Mbps encoder ceiling, and encoder-param reapplication after native lens replacement. Added a 1080p text floor: explicit lenses below it restore Auto with an explanation, and both Recorder and Admin warn on low-resolution streams. Fixed the web VideoView ref callback identity so Admin resolution tracking cannot loop. Checks: typecheck, lint, 33 tests, web export green. Code commit `f890fba`; APK v0.1.7 pending.
