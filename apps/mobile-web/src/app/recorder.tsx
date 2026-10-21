@@ -82,7 +82,7 @@ function RecorderWorkspace() {
       await camera.start('', {
         width: CONFIG.CAPTURE_RESOLUTION.width,
         height: CONFIG.CAPTURE_RESOLUTION.height,
-        fps: CONFIG.TARGET_FPS,
+        fps: CONFIG.CAMERA_CAPTURE_FPS,
       });
       attachCameraStream(camera);
       setSelectedDeviceId('');
@@ -90,7 +90,7 @@ function RecorderWorkspace() {
       // Let auto exposure/focus/white-balance converge before locking.
       await camera.autoAdjustForDocument();
       await new Promise((r) => setTimeout(r, CONFIG.CAMERA_AUTO_SETTLE_MS));
-      await camera.lockExposureFocusWhiteBalance();
+      await camera.lockWhiteBalance();
     } catch (err) {
       setCameraError(cameraErrMsg(err));
     } finally {
@@ -118,7 +118,7 @@ function RecorderWorkspace() {
       await camera.start(nextDeviceId, {
         width: CONFIG.CAPTURE_RESOLUTION.width,
         height: CONFIG.CAPTURE_RESOLUTION.height,
-        fps: CONFIG.TARGET_FPS,
+        fps: CONFIG.CAMERA_CAPTURE_FPS,
       });
       const actual = camera.getActualSettings();
       if (
@@ -137,7 +137,7 @@ function RecorderWorkspace() {
       await refreshCameras(camera);
       await camera.autoAdjustForDocument();
       await new Promise((r) => setTimeout(r, CONFIG.CAMERA_AUTO_SETTLE_MS));
-      await camera.lockExposureFocusWhiteBalance();
+      await camera.lockWhiteBalance();
     } catch (err) {
       const selectedError = cameraErrMsg(err);
       // A physical lens can reject 4K or be unavailable. Restore the default
@@ -147,14 +147,14 @@ function RecorderWorkspace() {
         await camera.start('', {
           width: CONFIG.CAPTURE_RESOLUTION.width,
           height: CONFIG.CAPTURE_RESOLUTION.height,
-          fps: CONFIG.TARGET_FPS,
+          fps: CONFIG.CAMERA_CAPTURE_FPS,
         });
         attachCameraStream(camera);
         setSelectedDeviceId('');
         await refreshCameras(camera);
         await camera.autoAdjustForDocument();
         await new Promise((r) => setTimeout(r, CONFIG.CAMERA_AUTO_SETTLE_MS));
-        await camera.lockExposureFocusWhiteBalance();
+        await camera.lockWhiteBalance();
         setCameraError(`${selectedError} Switched back to Auto.`);
       } catch (fallbackErr) {
         setCameraError(cameraErrMsg(fallbackErr));
@@ -181,7 +181,7 @@ function RecorderWorkspace() {
     try {
       await cam.autoAdjustForDocument();
       await new Promise((r) => setTimeout(r, CONFIG.CAMERA_AUTO_SETTLE_MS));
-      await cam.lockExposureFocusWhiteBalance();
+      await cam.lockWhiteBalance();
       pairing.requestRedetection();
     } finally {
       setRelockBusy(false);
@@ -200,7 +200,7 @@ function RecorderWorkspace() {
       await refreshCameras(cam);
       await cam.autoAdjustForDocument();
       await new Promise((r) => setTimeout(r, CONFIG.CAMERA_AUTO_SETTLE_MS));
-      await cam.lockExposureFocusWhiteBalance();
+      await cam.lockWhiteBalance();
     } catch (err) {
       setCameraError(cameraErrMsg(err));
     } finally {

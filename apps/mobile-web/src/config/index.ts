@@ -18,8 +18,14 @@ const EXTRA_ACCESS_KEYS = (process.env.EXPO_PUBLIC_ACCESS_KEYS ?? '')
 export const ACCESS_KEYS = Array.from(new Set([ACCESS_KEY, ...EXTRA_ACCESS_KEYS]));
 
 export const CONFIG = {
-  /** Low FPS is intentional: preserve pixels for photographed text. */
+  /** Low FPS is intentional: preserve pixels for photographed text. Encoder cap only. */
   TARGET_FPS: 8,
+  /**
+   * Sensor frame rate. Requesting 8 fps from the camera lets auto-exposure use
+   * ~1/8 s shutters, which smears handheld text; 30 fps caps exposure near 1/30 s.
+   * The encoder still drops to TARGET_FPS, so bandwidth per frame is unchanged.
+   */
+  CAMERA_CAPTURE_FPS: 30,
   /** Text clarity is the goal; congestion control still lowers the actual rate. */
   HIGH_BITRATE_BPS: 16_000_000,
   DEGRADATION: 'maintain-resolution',

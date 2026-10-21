@@ -41,9 +41,9 @@ class NativeCameraSource implements ICameraSource {
 
   async getFormats(_deviceId: string): Promise<CameraFormat[]> {
     return [
-      { ...CONFIG.CAMERA_PREFERRED_RESOLUTION, fps: CONFIG.TARGET_FPS },
-      { ...CONFIG.CAPTURE_RESOLUTION, fps: CONFIG.TARGET_FPS },
-      { ...CONFIG.CAMERA_FALLBACK_RESOLUTION, fps: CONFIG.TARGET_FPS },
+      { ...CONFIG.CAMERA_PREFERRED_RESOLUTION, fps: CONFIG.CAMERA_CAPTURE_FPS },
+      { ...CONFIG.CAPTURE_RESOLUTION, fps: CONFIG.CAMERA_CAPTURE_FPS },
+      { ...CONFIG.CAMERA_FALLBACK_RESOLUTION, fps: CONFIG.CAMERA_CAPTURE_FPS },
     ];
   }
 
@@ -93,41 +93,15 @@ class NativeCameraSource implements ICameraSource {
     }
   }
 
-  async autoAdjustForDocument(): Promise<void> {
-    const track = this.getVideoTrack();
-    if (!track) return;
-    try {
-      await track.applyConstraints({
-        advanced: [
-          { exposureMode: 'continuous' } as MediaTrackConstraintSet,
-          { focusMode: 'continuous' } as MediaTrackConstraintSet,
-          { whiteBalanceMode: 'continuous' } as MediaTrackConstraintSet,
-        ],
-      });
-    } catch { /* best-effort */ }
-  }
+  // react-native-webrtc's applyConstraints() ignores `advanced` and fills the
+  // missing width/height/frameRate with its 1280×720@30 defaults, which
+  // silently reformats the camera to 720p and drops the selected lens. Camera2
+  // already runs continuous AF/AE/AWB, so these stay no-ops on native.
+  async autoAdjustForDocument(): Promise<void> {}
 
-  async lockExposureFocusWhiteBalance(): Promise<void> {
-    const track = this.getVideoTrack();
-    if (!track) return;
-    try {
-      await track.applyConstraints({
-        advanced: [
-          { exposureMode: 'manual' } as MediaTrackConstraintSet,
-          { focusMode: 'manual' } as MediaTrackConstraintSet,
-          { whiteBalanceMode: 'manual' } as MediaTrackConstraintSet,
-        ],
-      });
-    } catch { /* best-effort */ }
-  }
+  async lockWhiteBalance(): Promise<void> {}
 
-  async setTorch(enabled: boolean): Promise<void> {
-    const track = this.getVideoTrack();
-    if (!track) return;
-    try {
-      await track.applyConstraints({ advanced: [{ torch: enabled } as MediaTrackConstraintSet] });
-    } catch { /* best-effort */ }
-  }
+  async setTorch(_enabled: boolean): Promise<void> {}
 
   setFacingMode(mode: 'user' | 'environment'): void {
     this.facingMode = mode;
@@ -138,7 +112,7 @@ class NativeCameraSource implements ICameraSource {
     if (this.stream) {
       const format: CameraFormat = {
         ...CONFIG.CAPTURE_RESOLUTION,
-        fps: CONFIG.TARGET_FPS,
+        fps: CONFIG.CAMERA_CAPTURE_FPS,
       };
       await this.start('', format);
     }

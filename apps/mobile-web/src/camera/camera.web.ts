@@ -42,9 +42,9 @@ class WebCameraSource implements ICameraSource {
 
   async getFormats(_deviceId: string): Promise<CameraFormat[]> {
     return [
-      { ...CONFIG.CAMERA_PREFERRED_RESOLUTION, fps: CONFIG.TARGET_FPS },
-      { ...CONFIG.CAPTURE_RESOLUTION, fps: CONFIG.TARGET_FPS },
-      { ...CONFIG.CAMERA_FALLBACK_RESOLUTION, fps: CONFIG.TARGET_FPS },
+      { ...CONFIG.CAMERA_PREFERRED_RESOLUTION, fps: CONFIG.CAMERA_CAPTURE_FPS },
+      { ...CONFIG.CAPTURE_RESOLUTION, fps: CONFIG.CAMERA_CAPTURE_FPS },
+      { ...CONFIG.CAMERA_FALLBACK_RESOLUTION, fps: CONFIG.CAMERA_CAPTURE_FPS },
     ];
   }
 
@@ -126,17 +126,15 @@ class WebCameraSource implements ICameraSource {
     }
   }
 
-  async lockExposureFocusWhiteBalance(): Promise<void> {
+  async lockWhiteBalance(): Promise<void> {
     const track = this.getVideoTrack();
     if (!track) return;
 
     try {
       await track.applyConstraints({
-        advanced: [
-          { exposureMode: 'manual' } as MediaTrackConstraintSet,
-          { focusMode: 'manual' } as MediaTrackConstraintSet,
-          { whiteBalanceMode: 'manual' } as MediaTrackConstraintSet,
-        ],
+        // Focus and exposure stay continuous: a manual lock freezes the focus
+        // distance and shutter, so any handheld movement afterwards blurs text.
+        advanced: [{ whiteBalanceMode: 'manual' } as MediaTrackConstraintSet],
       });
     } catch {
       // Safari and many Android browsers do not expose these controls.
@@ -176,7 +174,7 @@ class WebCameraSource implements ICameraSource {
       const format: CameraFormat = {
         width: track.getSettings().width ?? CONFIG.CAPTURE_RESOLUTION.width,
         height: track.getSettings().height ?? CONFIG.CAPTURE_RESOLUTION.height,
-        fps: CONFIG.TARGET_FPS,
+        fps: CONFIG.CAMERA_CAPTURE_FPS,
       };
       const overrides: MediaTrackConstraints = {
         width: { ideal: format.width },

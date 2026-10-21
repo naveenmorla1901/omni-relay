@@ -11,10 +11,15 @@ export interface ICameraSource {
   start(deviceId: string, format: CameraFormat): Promise<void>;
   stop(): void;
 
-  /** Let auto-exposure/focus/white-balance converge before locking. */
+  /** Restore continuous auto-exposure/focus/white-balance. */
   autoAdjustForDocument(): Promise<void>;
-  /** Best-effort on web; fully supported on native. */
-  lockExposureFocusWhiteBalance(): Promise<void>;
+  /**
+   * Freeze white balance only. Focus and exposure stay continuous: a locked
+   * focus blurs as soon as the handheld phone moves. Best-effort on web; no-op
+   * on native (react-native-webrtc has no focus/exposure/WB controls).
+   */
+  lockWhiteBalance(): Promise<void>;
+  /** Best-effort on web; no-op on native. */
   setTorch(enabled: boolean): Promise<void>;
 
   /** Set the desired facing for the Auto camera selection. */
