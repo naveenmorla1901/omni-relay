@@ -1,0 +1,15 @@
+plugins {
+  id 'com.android.library'
+  id 'expo-module-gradle-plugin'
+}
+
+group = 'com.clearrelay'
+version = '0.1.0'
+
+android {
+  namespace "expo.modules.recorderservice"
+  defaultConfig {
+    versionCode 1
+    versionName "0.1.0"
+  }
+}

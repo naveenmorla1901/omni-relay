@@ -46,14 +46,41 @@ export default function AdminScreen() {
   );
 }
 
-async function captureFromVideo(video: HTMLVideoElement): Promise<CapturedFrame | null> {
+type FeedRotation = 0 | 90 | 180 | 270;
+const FEED_ROTATIONS: FeedRotation[] = [0, 90, 180, 270];
+const FEED_ROTATION_KEY = 'clearrelay.feedRotation';
+
+/** Remembered per browser so a sideways Recorder stays upright next session. */
+function readFeedRotation(): FeedRotation {
+  try {
+    const stored = Number(globalThis.localStorage?.getItem(FEED_ROTATION_KEY));
+    return FEED_ROTATIONS.includes(stored as FeedRotation) ? (stored as FeedRotation) : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function storeFeedRotation(rotation: FeedRotation) {
+  try {
+    globalThis.localStorage?.setItem(FEED_ROTATION_KEY, String(rotation));
+  } catch {
+    // Private mode: the rotation just is not remembered.
+  }
+}
+
+/** Captures come out turned like the live view, so they are upright too. */
+async function captureFromVideo(video: HTMLVideoElement, rotation: FeedRotation): Promise<CapturedFrame | null> {
   const capture = await captureAndEnhanceVideo(video);
   if (!capture) return null;
   const now = Date.now();
+  const frame = { id: String(now), ts: now, ...capture };
+  if (rotation === 0) return frame;
+  const sideways = rotation === 90 || rotation === 270;
   return {
-    id: String(now),
-    ts: now,
-    ...capture,
+    ...frame,
+    dataUrl: await rotateImage(capture.dataUrl, rotation),
+    width: sideways ? capture.height : capture.width,
+    height: sideways ? capture.width : capture.height,
   };
 }
 
@@ -85,13 +112,24 @@ function AdminWorkspace() {
   const cropIdRef = useRef(0);
   const wide = width >= 1000;
   // The live feed takes the left of the screen, the phone stage the right.
-  const rightPaneWidth = Math.round(Math.min(560, Math.max(400, width * 0.32)));
-  const videoHeight = wide ? Math.max(380, Math.round(height - 190)) : Math.max(260, Math.round(width * 0.7));
+  const [feedRotation, setFeedRotation] = useState<FeedRotation>(readFeedRotation);
+  const feedSideways = feedRotation === 90 || feedRotation === 270;
+  // Live feed on the left, the Projector stage (phone + its controls) gets the larger right side.
+  const rightPaneWidth = Math.round(Math.min(980, Math.max(480, width * 0.55)));
+  const leftPaneWidth = width - rightPaneWidth - Spacing.three * 3;
+  const videoHeight = wide
+    ? Math.max(300, Math.min(Math.round(height - 190), Math.round(leftPaneWidth * (feedSideways ? 1.1 : 0.75))))
+    : Math.max(260, Math.round(width * 0.7));
   const recorderLive = pairing.phase === 'connected';
   const projectorReady = pairing.projectorJoined;
   const remoteLowResolution = Boolean(
     remoteResolution && !isTextQualityResolution(remoteResolution.width, remoteResolution.height),
   );
+
+  const changeFeedRotation = useCallback((rotation: FeedRotation) => {
+    setFeedRotation(rotation);
+    storeFeedRotation(rotation);
+  }, []);
 
   const attachVideoElement = useCallback((el: HTMLVideoElement | null) => {
     videoElementRef.current = el;
@@ -154,7 +192,7 @@ function AdminWorkspace() {
     captureInFlightRef.current = true;
     setCaptureBusy(true);
     try {
-      const frame = await captureFromVideo(video);
+      const frame = await captureFromVideo(video, feedRotation);
       if (!frame) return;
       setGallery((prev) => [frame, ...prev].slice(0, 20));
       setActiveCapture(frame);
@@ -170,7 +208,7 @@ function AdminWorkspace() {
       captureInFlightRef.current = false;
       setCaptureBusy(false);
     }
-  }, [detectCapture]);
+  }, [detectCapture, feedRotation]);
 
   const downloadActive = useCallback(() => {
     if (!activeCapture) return;
@@ -377,6 +415,48 @@ function AdminWorkspace() {
                 </ThemedText>
               </View>
 
+              <View style={styles.row}>
+                <ThemedText type="small" themeColor="textSecondary">Rotate</ThemedText>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Rotate live feed 90 degrees counter-clockwise"
+                  onPress={() => changeFeedRotation(((feedRotation + 270) % 360) as FeedRotation)}
+                  style={({ pressed }) => [styles.rotateBtn, { borderColor: theme.border, backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}>
+                  <ThemedText type="small">↺</ThemedText>
+                </Pressable>
+                {FEED_ROTATIONS.map((angle) => {
+                  const active = feedRotation === angle;
+                  return (
+                    <Pressable
+                      key={angle}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Show live feed rotated ${angle} degrees`}
+                      onPress={() => changeFeedRotation(angle)}
+                      style={({ pressed }) => [
+                        styles.rotateBtn,
+                        {
+                          borderColor: active ? theme.accent : theme.border,
+                          backgroundColor: active ? theme.backgroundSelected : pressed ? theme.backgroundSelected : 'transparent',
+                        },
+                      ]}>
+                      <ThemedText type="small" style={{ color: active ? theme.accent : theme.text, fontWeight: active ? '600' : '400' }}>
+                        {angle}°
+                      </ThemedText>
+                    </Pressable>
+                  );
+                })}
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Rotate live feed 90 degrees clockwise"
+                  onPress={() => changeFeedRotation(((feedRotation + 90) % 360) as FeedRotation)}
+                  style={({ pressed }) => [styles.rotateBtn, { borderColor: theme.border, backgroundColor: pressed ? theme.backgroundSelected : 'transparent' }]}>
+                  <ThemedText type="small">↻</ThemedText>
+                </Pressable>
+                <ThemedText type="small" themeColor="textSecondary" style={{ fontSize: 11 }}>
+                  Captures follow this rotation.
+                </ThemedText>
+              </View>
+
               <View style={[styles.videoBox, { height: videoHeight, borderColor: theme.border }]}>
                 {recorderLive ? (
                   <VideoView
@@ -384,6 +464,7 @@ function AdminWorkspace() {
                     placeholder="Waiting for camera…"
                     mirror={pairing.remoteCameraMirrored}
                     onVideoElement={attachVideoElement}
+                    rotation={feedRotation}
                   />
                 ) : (
                   <View style={styles.videoPlaceholder}>
@@ -775,6 +856,7 @@ const styles = StyleSheet.create({
   thumbImg: { width: 96, height: 72, borderRadius: 6 },
   captureSection: { borderWidth: 1, borderRadius: 14, padding: Spacing.three, gap: Spacing.two },
   capturePreviewLarge: { width: '100%', aspectRatio: 4 / 3, borderRadius: 10 },
+  rotateBtn: { borderWidth: 1, borderRadius: 8, paddingHorizontal: Spacing.two + 2, paddingVertical: Spacing.one },
   iconBtn: { borderWidth: 1, borderRadius: 10, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
   zoomOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.96)' },
   zoomToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.three, paddingTop: 48, paddingBottom: Spacing.three },

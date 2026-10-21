@@ -24,6 +24,12 @@ import { APP_BUILD, CONFIG } from '@/config';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { usePairing } from '@/hooks/use-pairing';
 import { useTheme } from '@/hooks/use-theme';
+import {
+  backgroundCameraSupported,
+  isBackgroundCameraRunning,
+  startBackgroundCamera,
+  stopBackgroundCamera,
+} from '@/lib/background-camera';
 import { useSessionStore } from '@/store/session';
 
 export default function RecorderScreen() {
@@ -50,6 +56,8 @@ function RecorderWorkspace() {
   const autoStartedRef = useRef(false);
   const selectedDeviceIdRef = useRef('');
   const restartingRef = useRef(false);
+  /** null = not attempted; true = camera keeps streaming with the screen off. */
+  const [backgroundOk, setBackgroundOk] = useState<boolean | null>(null);
   useEffect(() => {
     selectedDeviceIdRef.current = selectedDeviceId;
   }, [selectedDeviceId]);
@@ -216,7 +224,10 @@ function RecorderWorkspace() {
     }
   }, [attachCameraStream, cameraBusy, refreshCameras]);
 
-  useEffect(() => () => { cameraRef.current?.stop(); }, []);
+  useEffect(() => () => {
+    cameraRef.current?.stop();
+    stopBackgroundCamera();
+  }, []);
 
   /**
    * Bring the camera back after the OS took it away (screen off, app in the
@@ -254,7 +265,9 @@ function RecorderWorkspace() {
       if (next !== 'active' || !wasAway) return;
       const track = cameraRef.current?.getStream()?.getVideoTracks()[0];
       if (!track) return;
-      if (Platform.OS !== 'web' || track.readyState === 'ended' || track.muted) void restartCamera();
+      // With the foreground service the camera never stopped; restart only a dead track.
+      const cameraKept = isBackgroundCameraRunning();
+      if ((Platform.OS !== 'web' && !cameraKept) || track.readyState === 'ended' || track.muted) void restartCamera();
     });
     return () => subscription.remove();
   }, [restartCamera]);
@@ -291,6 +304,27 @@ function RecorderWorkspace() {
   }, [pairing.phase]);
 
   const connected = pairing.phase === 'connected';
+  const streaming = connected && localStream !== null;
+
+  // Screen-off streaming: Android keeps camera access only for an app with a
+  // camera foreground service, which must start while the Recorder is visible.
+  useEffect(() => {
+    if (!backgroundCameraSupported) return;
+    if (!streaming) {
+      stopBackgroundCamera();
+      const reset = setTimeout(() => setBackgroundOk(null), 0);
+      return () => clearTimeout(reset);
+    }
+    if (isBackgroundCameraRunning()) return;
+    let cancelled = false;
+    void startBackgroundCamera().then((ok) => {
+      if (!cancelled) setBackgroundOk(ok);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [streaming]);
+
   const lensOptions = buildLensOptions(availableCameras);
   const selectedLensOption = lensOptions.find((option) => option.device.id === selectedDeviceId);
   const actualLensOption = lensOptions.find((option) => option.device.id === cameraSettings?.deviceId);
@@ -408,7 +442,7 @@ function RecorderWorkspace() {
             {/* Connected: camera controls */}
             {connected && (
               <>
-                <RecorderKeepAwake />
+                {backgroundOk ? null : <RecorderKeepAwake />}
                 {pairing.reconnecting ? (
                   <View style={styles.statusRow}>
                     <ActivityIndicator color={theme.accent} />
@@ -507,8 +541,16 @@ function RecorderWorkspace() {
                 )}
 
                 <ThemedText type="small" themeColor="textSecondary">
-                  Keep the phone steady. Low-FPS high-resolution mode — text clarity is the priority. The screen
-                  stays on while connected; if the phone sleeps anyway, the camera and link resume on their own.
+                  Keep the phone steady. Low-FPS high-resolution mode — text clarity is the priority.
+                </ThemedText>
+                <ThemedText type="small" style={{ color: backgroundOk ? theme.success : theme.textSecondary }}>
+                  {backgroundOk
+                    ? 'Screen-off streaming is on: you can turn the screen off and the camera keeps sending. A notification shows while it runs.'
+                    : backgroundCameraSupported
+                      ? 'Screen-off streaming is unavailable on this phone, so the screen stays on. If it sleeps, the camera and link resume when you wake it.'
+                      : Platform.OS === 'web'
+                        ? 'Browsers stop the camera when the screen turns off. Use the Android app to stream with the screen off.'
+                        : 'This build cannot stream with the screen off, so the screen stays on.'}
                 </ThemedText>
 
                 <View style={styles.actionRow}>

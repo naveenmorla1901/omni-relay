@@ -18,7 +18,7 @@ const EXTRA_ACCESS_KEYS = (process.env.EXPO_PUBLIC_ACCESS_KEYS ?? '')
 export const ACCESS_KEYS = Array.from(new Set([ACCESS_KEY, ...EXTRA_ACCESS_KEYS]));
 
 /** Shown in every role's top bar so stale tabs/APKs are obvious. Bump with each `v*` tag. */
-export const APP_BUILD = 'v0.1.10';
+export const APP_BUILD = 'v0.1.11';
 
 export const CONFIG = {
   /** Low FPS is intentional: preserve pixels for photographed text. Encoder cap only. */

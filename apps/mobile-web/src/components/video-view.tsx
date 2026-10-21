@@ -8,16 +8,18 @@ type VideoViewProps = {
   placeholder?: string;
   mirror?: boolean;
   onVideoElement?: (el: null) => void;
+  /** Clockwise display rotation; native Admin is not the capture path, so a plain turn is enough. */
+  rotation?: 0 | 90 | 180 | 270;
 };
 
-export function VideoView({ stream, placeholder = 'Starting camera…', mirror = false }: VideoViewProps) {
+export function VideoView({ stream, placeholder = 'Starting camera…', mirror = false, rotation = 0 }: VideoViewProps) {
   const streamURL = stream ? (stream as unknown as { toURL(): string }).toURL() : null;
   return (
     <View style={styles.container}>
       {streamURL ? (
         <RTCView
           streamURL={streamURL}
-          style={styles.video}
+          style={[styles.video, rotation ? { transform: [{ rotate: `${rotation}deg` }] } : null]}
           objectFit="contain"
           mirror={mirror}
           zOrder={0}

@@ -84,7 +84,8 @@ export function ProjectorStage({
   const hasContent = Boolean(scene.image || hasText);
 
   // Fit the phone inside the pane width and the available height.
-  let cssWidth = Math.max(120, Math.min(containerWidth, 440) - BEZEL * 2);
+  // A sideways phone may grow wider; an upright one is height-bound anyway.
+  let cssWidth = Math.max(120, Math.min(containerWidth, aspect >= 1 ? 720 : 440) - BEZEL * 2);
   let cssHeight = cssWidth / aspect;
   const heightCap = Math.max(240, maxPreviewHeight);
   if (cssHeight > heightCap) {
@@ -504,243 +505,248 @@ export function ProjectorStage({
         <span style={{ color: status.color === theme.textSecondary ? theme.textSecondary : status.color }}>{status.text}</span>
       </div>
 
-      {/* Phone */}
-      <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0' }}>
-        <div
-          style={{
-            position: 'relative',
-            padding: BEZEL,
-            borderRadius: radius + BEZEL,
-            background: 'linear-gradient(145deg, #2A2E35, #0B0C0E 60%)',
-            boxShadow: `0 0 0 ${fileDragging ? 2 : 1}px ${fileDragging ? theme.accent : '#3A3F47'}, 0 18px 40px rgba(0,0,0,0.35)`,
-          }}>
-          {/* Side buttons */}
-          <PhoneButton side={portraitFrame ? 'right' : 'bottom'} offset={0.22} length={0.14} />
-          <PhoneButton side={portraitFrame ? 'left' : 'top'} offset={0.18} length={0.08} />
-          <PhoneButton side={portraitFrame ? 'left' : 'top'} offset={0.3} length={0.08} />
-          <canvas
-            ref={canvasRef}
-            aria-label="Projector screen. Drag to move, scroll or pinch to zoom, double-click to switch Fit and Fill."
-            onPointerDown={onPointerDown}
-            onPointerMove={onPointerMove}
-            onPointerUp={onPointerUp}
-            onPointerCancel={onPointerUp}
-            onDoubleClick={toggleFitFill}
-            style={{
-              display: 'block',
-              width: cssWidth,
-              height: cssHeight,
-              borderRadius: radius,
-              touchAction: 'none',
-              cursor: hasContent ? 'grab' : 'default',
-              background: scene.background,
-            }}
-          />
-          {/* Camera cut-out */}
+      {/* Phone beside its controls when the pane is wide; stacked when narrow. */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start', justifyContent: 'center' }}>
+        {/* Phone */}
+        <div style={{ display: 'flex', justifyContent: 'center', padding: '4px 0' }}>
           <div
             style={{
-              position: 'absolute',
-              pointerEvents: 'none',
-              background: '#000',
-              borderRadius: 999,
-              ...(portraitFrame
-                ? { top: BEZEL + shortSide * 0.035, left: '50%', width: shortSide * 0.27, height: shortSide * 0.075, transform: 'translateX(-50%)' }
-                : { left: BEZEL + shortSide * 0.035, top: '50%', height: shortSide * 0.27, width: shortSide * 0.075, transform: 'translateY(-50%)' }),
-            }}
-          />
-          {!hasContent || fileDragging ? (
+              position: 'relative',
+              padding: BEZEL,
+              borderRadius: radius + BEZEL,
+              background: 'linear-gradient(145deg, #2A2E35, #0B0C0E 60%)',
+              boxShadow: `0 0 0 ${fileDragging ? 2 : 1}px ${fileDragging ? theme.accent : '#3A3F47'}, 0 18px 40px rgba(0,0,0,0.35)`,
+            }}>
+            {/* Side buttons */}
+            <PhoneButton side={portraitFrame ? 'right' : 'bottom'} offset={0.22} length={0.14} />
+            <PhoneButton side={portraitFrame ? 'left' : 'top'} offset={0.18} length={0.08} />
+            <PhoneButton side={portraitFrame ? 'left' : 'top'} offset={0.3} length={0.08} />
+            <canvas
+              ref={canvasRef}
+              aria-label="Projector screen. Drag to move, scroll or pinch to zoom, double-click to switch Fit and Fill."
+              onPointerDown={onPointerDown}
+              onPointerMove={onPointerMove}
+              onPointerUp={onPointerUp}
+              onPointerCancel={onPointerUp}
+              onDoubleClick={toggleFitFill}
+              style={{
+                display: 'block',
+                width: cssWidth,
+                height: cssHeight,
+                borderRadius: radius,
+                touchAction: 'none',
+                cursor: hasContent ? 'grab' : 'default',
+                background: scene.background,
+              }}
+            />
+            {/* Camera cut-out */}
             <div
               style={{
                 position: 'absolute',
-                inset: BEZEL,
-                borderRadius: radius,
-                display: 'flex',
-                flexDirection: 'column',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: 10,
-                padding: 20,
-                textAlign: 'center',
-                pointerEvents: fileDragging ? 'none' : 'auto',
-                color: scene.background === '#FFFFFF' ? '#5C6470' : '#A7B0BC',
-                border: `2px dashed ${fileDragging ? theme.accent : 'rgba(167,176,188,0.35)'}`,
-                background: fileDragging ? 'rgba(10,132,255,0.12)' : 'transparent',
-              }}>
-              <div style={{ fontSize: 28, lineHeight: 1 }}>⤓</div>
-              <div style={{ fontWeight: 600, fontSize: 14 }}>
-                {fileDragging ? 'Drop to show it on the Projector' : 'Drop an image here'}
+                pointerEvents: 'none',
+                background: '#000',
+                borderRadius: 999,
+                ...(portraitFrame
+                  ? { top: BEZEL + shortSide * 0.035, left: '50%', width: shortSide * 0.27, height: shortSide * 0.075, transform: 'translateX(-50%)' }
+                  : { left: BEZEL + shortSide * 0.035, top: '50%', height: shortSide * 0.27, width: shortSide * 0.075, transform: 'translateY(-50%)' }),
+              }}
+            />
+            {!hasContent || fileDragging ? (
+              <div
+                style={{
+                  position: 'absolute',
+                  inset: BEZEL,
+                  borderRadius: radius,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  gap: 10,
+                  padding: 20,
+                  textAlign: 'center',
+                  pointerEvents: fileDragging ? 'none' : 'auto',
+                  color: scene.background === '#FFFFFF' ? '#5C6470' : '#A7B0BC',
+                  border: `2px dashed ${fileDragging ? theme.accent : 'rgba(167,176,188,0.35)'}`,
+                  background: fileDragging ? 'rgba(10,132,255,0.12)' : 'transparent',
+                }}>
+                <div style={{ fontSize: 28, lineHeight: 1 }}>⤓</div>
+                <div style={{ fontWeight: 600, fontSize: 14 }}>
+                  {fileDragging ? 'Drop to show it on the Projector' : 'Drop an image here'}
+                </div>
+                {!fileDragging ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={openFilePicker}
+                      style={{ ...button(), background: theme.accent, color: theme.accentText, border: `1px solid ${theme.accent}`, fontWeight: 600 }}>
+                      Choose from files
+                    </button>
+                    <div style={{ fontSize: 12 }}>or paste with Ctrl+V · or type text below</div>
+                  </>
+                ) : null}
               </div>
-              {!fileDragging ? (
-                <>
-                  <button
-                    type="button"
-                    onClick={openFilePicker}
-                    style={{ ...button(), background: theme.accent, color: theme.accentText, border: `1px solid ${theme.accent}`, fontWeight: 600 }}>
-                    Choose from files
-                  </button>
-                  <div style={{ fontSize: 12 }}>or paste with Ctrl+V · or type text below</div>
-                </>
-              ) : null}
-            </div>
-          ) : null}
+            ) : null}
+          </div>
         </div>
-      </div>
+        <div style={{ flex: '1 1 300px', minWidth: 0, maxWidth: 560, display: 'flex', flexDirection: 'column', gap: 12 }}>
 
-      {notice ? <div style={{ fontSize: 12, color: theme.danger }}>{notice}</div> : null}
+          {notice ? <div style={{ fontSize: 12, color: theme.danger }}>{notice}</div> : null}
 
-      {/* Image editor */}
-      <div style={row}>
-        <span style={label}>Image</span>
-        <button type="button" style={button()} onClick={openFilePicker}>
-          {scene.image ? 'Replace…' : 'Choose…'}
-        </button>
-        <button
-          type="button"
-          style={button(false, !captureDataUrl)}
-          disabled={!captureDataUrl}
-          onClick={() => captureDataUrl && loadImage(captureDataUrl)}>
-          Use selected capture
-        </button>
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          style={{ display: 'none' }}
-          onChange={(event) => {
-            readFile(event.target.files?.[0]);
-            event.target.value = '';
-          }}
-        />
-      </div>
-      {scene.image ? (
-        <>
+          {/* Image editor */}
           <div style={row}>
-            <span style={label}>Zoom</span>
+            <span style={label}>Image</span>
+            <button type="button" style={button()} onClick={openFilePicker}>
+              {scene.image ? 'Replace…' : 'Choose…'}
+            </button>
             <button
               type="button"
-              aria-label="Zoom out"
-              style={button()}
-              onClick={() => zoomLayer('image', imageScale / ZOOM_STEP)}>
-              −
+              style={button(false, !captureDataUrl)}
+              disabled={!captureDataUrl}
+              onClick={() => captureDataUrl && loadImage(captureDataUrl)}>
+              Use selected capture
             </button>
             <input
-              type="range"
-              aria-label="Image zoom"
-              min={Math.log(MIN_IMAGE_SCALE)}
-              max={Math.log(MAX_IMAGE_SCALE)}
-              step={0.01}
-              value={Math.log(imageScale)}
-              onChange={(event) => zoomLayer('image', Math.exp(Number(event.target.value)))}
-              style={{ flex: 1, minWidth: 90 }}
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={(event) => {
+                readFile(event.target.files?.[0]);
+                event.target.value = '';
+              }}
             />
+          </div>
+          {scene.image ? (
+            <>
+              <div style={row}>
+                <span style={label}>Zoom</span>
+                <button
+                  type="button"
+                  aria-label="Zoom out"
+                  style={button()}
+                  onClick={() => zoomLayer('image', imageScale / ZOOM_STEP)}>
+                  −
+                </button>
+                <input
+                  type="range"
+                  aria-label="Image zoom"
+                  min={Math.log(MIN_IMAGE_SCALE)}
+                  max={Math.log(MAX_IMAGE_SCALE)}
+                  step={0.01}
+                  value={Math.log(imageScale)}
+                  onChange={(event) => zoomLayer('image', Math.exp(Number(event.target.value)))}
+                  style={{ flex: 1, minWidth: 90 }}
+                />
+                <button
+                  type="button"
+                  aria-label="Zoom in"
+                  style={button()}
+                  onClick={() => zoomLayer('image', imageScale * ZOOM_STEP)}>
+                  +
+                </button>
+                <span style={{ fontSize: 12, color: theme.textSecondary, width: 42, textAlign: 'right' }}>
+                  {Math.round(imageScale * 100)}%
+                </span>
+              </div>
+              <div style={row}>
+                <span style={label}>Shape</span>
+                <button type="button" style={button()} onClick={fitImage} title="Whole image visible">Fit</button>
+                <button type="button" style={button()} onClick={fillImage} title="Fill the phone screen, no bars">Fill</button>
+                <button type="button" style={button()} onClick={centerImage}>Center</button>
+                <button type="button" style={button()} onClick={rotateImage}>↻ 90°</button>
+                <button type="button" style={button(false, false, theme.danger)} onClick={removeImage}>Remove</button>
+              </div>
+            </>
+          ) : null}
+
+          {/* Text */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <span style={label}>Text</span>
+            <textarea
+              value={scene.text?.text ?? ''}
+              onChange={(event) => {
+                setText(event.target.value);
+                setTarget('text');
+              }}
+              placeholder="Type or paste text or code — it appears on the Projector as you type."
+              rows={4}
+              style={{
+                width: '100%',
+                boxSizing: 'border-box',
+                border: `1px solid ${theme.border}`,
+                borderRadius: 8,
+                padding: 8,
+                background: theme.background,
+                color: theme.text,
+                font: scene.text?.mono ? '13px ui-monospace, Menlo, Consolas, monospace' : 'inherit',
+                resize: 'vertical',
+              }}
+            />
+            {scene.text ? (
+              <div style={row}>
+                <span style={{ ...label, minWidth: 0 }}>Size</span>
+                <input
+                  type="range"
+                  min={MIN_TEXT_SIZE}
+                  max={MAX_TEXT_SIZE}
+                  step={0.0025}
+                  value={scene.text.size}
+                  onChange={(event) => zoomLayer('text', Number(event.target.value))}
+                  style={{ flex: 1, minWidth: 80 }}
+                  aria-label="Text size"
+                />
+                {TEXT_COLORS.map((color) => (
+                  <button
+                    key={color.value}
+                    type="button"
+                    style={button(scene.text?.color === color.value)}
+                    onClick={() => setScene((s) => (s.text ? { ...s, text: { ...s.text, color: color.value } } : s))}>
+                    {color.label}
+                  </button>
+                ))}
+                <button
+                  type="button"
+                  style={button(scene.text.mono)}
+                  onClick={() => setScene((s) => (s.text ? { ...s, text: { ...s.text, mono: !s.text.mono } } : s))}>
+                  Code font
+                </button>
+                <button type="button" style={button(false, false, theme.danger)} onClick={removeText}>Remove</button>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Screen */}
+          <div style={row}>
+            <span style={label}>Screen</span>
             <button
               type="button"
-              aria-label="Zoom in"
-              style={button()}
-              onClick={() => zoomLayer('image', imageScale * ZOOM_STEP)}>
-              +
+              style={button(scene.background === '#000000')}
+              onClick={() => setScene((s) => ({ ...s, background: '#000000' }))}>
+              Black
             </button>
-            <span style={{ fontSize: 12, color: theme.textSecondary, width: 42, textAlign: 'right' }}>
-              {Math.round(imageScale * 100)}%
-            </span>
-          </div>
-          <div style={row}>
-            <span style={label}>Shape</span>
-            <button type="button" style={button()} onClick={fitImage} title="Whole image visible">Fit</button>
-            <button type="button" style={button()} onClick={fillImage} title="Fill the phone screen, no bars">Fill</button>
-            <button type="button" style={button()} onClick={centerImage}>Center</button>
-            <button type="button" style={button()} onClick={rotateImage}>↻ 90°</button>
-            <button type="button" style={button(false, false, theme.danger)} onClick={removeImage}>Remove</button>
-          </div>
-        </>
-      ) : null}
-
-      {/* Text */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-        <span style={label}>Text</span>
-        <textarea
-          value={scene.text?.text ?? ''}
-          onChange={(event) => {
-            setText(event.target.value);
-            setTarget('text');
-          }}
-          placeholder="Type or paste text or code — it appears on the Projector as you type."
-          rows={4}
-          style={{
-            width: '100%',
-            boxSizing: 'border-box',
-            border: `1px solid ${theme.border}`,
-            borderRadius: 8,
-            padding: 8,
-            background: theme.background,
-            color: theme.text,
-            font: scene.text?.mono ? '13px ui-monospace, Menlo, Consolas, monospace' : 'inherit',
-            resize: 'vertical',
-          }}
-        />
-        {scene.text ? (
-          <div style={row}>
-            <span style={{ ...label, minWidth: 0 }}>Size</span>
-            <input
-              type="range"
-              min={MIN_TEXT_SIZE}
-              max={MAX_TEXT_SIZE}
-              step={0.0025}
-              value={scene.text.size}
-              onChange={(event) => zoomLayer('text', Number(event.target.value))}
-              style={{ flex: 1, minWidth: 80 }}
-              aria-label="Text size"
-            />
-            {TEXT_COLORS.map((color) => (
-              <button
-                key={color.value}
-                type="button"
-                style={button(scene.text?.color === color.value)}
-                onClick={() => setScene((s) => (s.text ? { ...s, text: { ...s.text, color: color.value } } : s))}>
-                {color.label}
-              </button>
-            ))}
             <button
               type="button"
-              style={button(scene.text.mono)}
-              onClick={() => setScene((s) => (s.text ? { ...s, text: { ...s.text, mono: !s.text.mono } } : s))}>
-              Code font
+              style={button(scene.background === '#FFFFFF')}
+              onClick={() => setScene((s) => ({ ...s, background: '#FFFFFF' }))}>
+              White
             </button>
-            <button type="button" style={button(false, false, theme.danger)} onClick={removeText}>Remove</button>
+            <button type="button" style={button(rotated)} onClick={() => setRotated((value) => !value)}>
+              ⟳ {rotated ? 'Sideways' : 'Upright'}
+            </button>
+            <button
+              type="button"
+              style={{ ...button(false, !hasContent, theme.danger), marginLeft: 'auto' }}
+              disabled={!hasContent}
+              onClick={clearScreen}>
+              Clear Projector
+            </button>
           </div>
-        ) : null}
-      </div>
 
-      {/* Screen */}
-      <div style={row}>
-        <span style={label}>Screen</span>
-        <button
-          type="button"
-          style={button(scene.background === '#000000')}
-          onClick={() => setScene((s) => ({ ...s, background: '#000000' }))}>
-          Black
-        </button>
-        <button
-          type="button"
-          style={button(scene.background === '#FFFFFF')}
-          onClick={() => setScene((s) => ({ ...s, background: '#FFFFFF' }))}>
-          White
-        </button>
-        <button type="button" style={button(rotated)} onClick={() => setRotated((value) => !value)}>
-          ⟳ {rotated ? 'Sideways' : 'Upright'}
-        </button>
-        <button
-          type="button"
-          style={{ ...button(false, !hasContent, theme.danger), marginLeft: 'auto' }}
-          disabled={!hasContent}
-          onClick={clearScreen}>
-          Clear Projector
-        </button>
-      </div>
-
-      <div style={{ fontSize: 12, color: theme.textSecondary }}>
-        Drag to move · scroll or pinch to zoom · double-click switches Fit/Fill.
-        {viewport ? ` Sends ${rotated ? outputSize.height : outputSize.width}×${rotated ? outputSize.width : outputSize.height} px.` : ''}
+          <div style={{ fontSize: 12, color: theme.textSecondary }}>
+            Drag to move · scroll or pinch to zoom · double-click switches Fit/Fill.
+            {viewport ? ` Sends ${rotated ? outputSize.height : outputSize.width}×${rotated ? outputSize.width : outputSize.height} px.` : ''}
+          </div>
+        </div>
       </div>
     </div>
   );

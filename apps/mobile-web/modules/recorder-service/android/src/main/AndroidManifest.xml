@@ -1,0 +1,14 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+  <uses-permission android:name="android.permission.WAKE_LOCK" />
+  <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+  <application>
+    <!-- Keeps the Recorder camera streaming while the screen is off. -->
+    <service
+      android:name="expo.modules.recorderservice.RecorderForegroundService"
+      android:exported="false"
+      android:foregroundServiceType="camera" />
+  </application>
+</manifest>

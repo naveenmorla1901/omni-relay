@@ -19,6 +19,7 @@ expo-env.d.ts
 # Native projects (regenerate with `npx expo prebuild`)
 apps/mobile-web/ios/
 apps/mobile-web/android/
+apps/mobile-web/modules/*/android/build/
 
 # Build / test output
 coverage/
