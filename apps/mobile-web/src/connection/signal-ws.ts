@@ -10,7 +10,7 @@ export type SignalMsg =
   | { t: 'room-ok'; role: WsRole }
   | { t: 'joined'; role: WsRole }
   | { t: 'left'; role: WsRole }
-  | { t: 'sdp'; from: WsRole; sdp: string; kind: 'offer' | 'answer' }
+  | { t: 'sdp'; from: WsRole; sdp: string; kind: 'offer' | 'answer' | 'stage' }
   | { t: 'push'; data: string; mime: string }
   | { t: 'error'; msg: string };
 
@@ -72,8 +72,13 @@ export class SignalClient {
     this.send({ t: 'sdp', to, sdp, kind });
   }
 
-  pushToDisplay(data: string, mime: string): void {
-    this.send({ t: 'push', data, mime });
+  /**
+   * Send a serialized Link B stage message to another peer. It rides the
+   * relay's `sdp` forward because that is the one peer-to-peer message every
+   * deployed relay version passes through; older relays drop `push`.
+   */
+  relayStage(to: WsRole, payload: string): void {
+    this.send({ t: 'sdp', to, sdp: payload, kind: 'stage' });
   }
 
   /** Subscribe to incoming messages. Returns an unsubscribe function. */

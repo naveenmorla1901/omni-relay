@@ -42,8 +42,8 @@ export const CONFIG = {
   QUAD_MAX_CANDIDATES: 10,
   QUAD_DETECTION_BUDGET_MS: 1_500,
   AUTO_CROP_ON_DETECT: true,
-  /** Capture several live frames and keep the sharpest before enhancement. */
-  CAPTURE_SAMPLE_COUNT: 3,
+  /** Capture several live frames and keep the sharpest (~125 ms each at 8 fps). */
+  CAPTURE_SAMPLE_COUNT: 5,
   CAPTURE_FRAME_TIMEOUT_MS: 400,
   CAPTURE_CONTRAST: 1.15,
   CAPTURE_BRIGHTNESS: 1.03,
@@ -57,6 +57,12 @@ export const CONFIG = {
   CAPTURE_CLAHE_CLIP_LIMIT: 2.2,
   CAPTURE_CLAHE_STRENGTH: 0.55,
   JPEG_WEBP_QUALITY: 0.95,
+  /** Projector stage: rendered at the Projector's physical pixels, capped here. */
+  STAGE_MAX_LONG_SIDE: 2560,
+  STAGE_JPEG_QUALITY: 0.92,
+  /** Live stage edits are batched so a drag sends a frame, not a flood. */
+  STAGE_SEND_DEBOUNCE_MS: 250,
+  STAGE_PREVIEW_MAX_HEIGHT: 560,
   DATACHANNEL_CHUNK: 16 * 1024,
   DC_HIGH_WATER: 1 * 1024 * 1024,
   HEARTBEAT_MS: 2000,

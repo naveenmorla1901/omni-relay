@@ -45,7 +45,19 @@ export type DisplayPush =
   | { v: ProtocolVersion; t: 'render-image-chunk'; id: string; seq: number; data: string }
   | { v: ProtocolVersion; t: 'render-image-end'; id: string };
 
-export type ProtocolMessage = ControlMsg | DisplayPush;
+/**
+ * Link B stage (Projector <-> Admin). Sent through the WS relay's `sdp`
+ * forward with `kind: 'stage'`, which every deployed relay version passes
+ * through untouched.
+ */
+export type StageMsg =
+  /** Projector screen in CSS px plus device pixel ratio. */
+  | { v: ProtocolVersion; t: 'viewport'; w: number; h: number; dpr: number }
+  /** A rendered stage bitmap; `data` is raw base64 (no data-URL prefix). */
+  | { v: ProtocolVersion; t: 'stage-frame'; id: string; mime: string; data: string; w: number; h: number }
+  | { v: ProtocolVersion; t: 'stage-clear' };
+
+export type ProtocolMessage = ControlMsg | DisplayPush | StageMsg;
 
 const ROLES: readonly Role[] = ['recorder', 'admin', 'display'];
 
@@ -126,6 +138,30 @@ function isDisplayPush(value: Record<string, unknown>): value is DisplayPush {
   }
 }
 
+function isPositiveNumber(value: unknown): value is number {
+  return isFiniteNumber(value) && value > 0;
+}
+
+function isStageMsg(value: Record<string, unknown>): value is StageMsg {
+  switch (value.t) {
+    case 'viewport':
+      return isPositiveNumber(value.w) && isPositiveNumber(value.h) && isPositiveNumber(value.dpr);
+    case 'stage-frame':
+      return (
+        isNonEmptyString(value.id) &&
+        typeof value.mime === 'string' &&
+        value.mime.startsWith('image/') &&
+        isNonEmptyString(value.data) &&
+        isPositiveNumber(value.w) &&
+        isPositiveNumber(value.h)
+      );
+    case 'stage-clear':
+      return true;
+    default:
+      return false;
+  }
+}
+
 /** Parse untrusted JSON. Returns null for malformed, unknown, or wrong-version payloads. */
 export function parseMessage(raw: string): ProtocolMessage | null {
   let value: unknown;
@@ -139,7 +175,7 @@ export function parseMessage(raw: string): ProtocolMessage | null {
     return null;
   }
 
-  if (isControlMsg(value) || isDisplayPush(value)) {
+  if (isControlMsg(value) || isDisplayPush(value) || isStageMsg(value)) {
     return value;
   }
 

@@ -6,6 +6,7 @@ import { SignalClient } from '@/connection/signal-ws';
 import { CONFIG } from '@/config';
 import type { CameraFacingMode, Role } from '@/protocol/messages';
 import { parseMessage, serializeMessage } from '@/protocol/messages';
+import type { Viewport } from '@/lib/stage';
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -50,6 +51,9 @@ export type UsePairingResult = {
   /** Display: last image pushed from Admin. `data` is raw base64 (no data-URL prefix). */
   receivedImage: { data: string; mime: string } | null;
 
+  /** Admin: the Projector's reported screen, or null until it reports. */
+  projectorViewport: Viewport | null;
+
   /** Admin: create a room and get a shareable code. */
   createRoom(): Promise<void>;
 
@@ -65,8 +69,14 @@ export type UsePairingResult = {
   /** Recorder: ask Admin to re-run quad detection on its current/next capture. */
   requestRedetection(): void;
 
-  /** Admin: push a data-URL image to the connected Projector via the WS relay. */
-  pushImage(dataUrl: string): void;
+  /** Admin: show a rendered stage bitmap (data URL) full-screen on the Projector. */
+  sendStageFrame(dataUrl: string, width: number, height: number): void;
+
+  /** Admin: blank the Projector screen. */
+  clearStage(): void;
+
+  /** Display: report this screen so Admin can shape its stage to match. */
+  sendViewport(viewport: Viewport): void;
 
   /** Close everything and return to idle. */
   reset(): void;
@@ -86,6 +96,7 @@ export function usePairing(role: PairingRole): UsePairingResult {
   const [peerRole, setPeerRole] = useState<Role | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [receivedImage, setReceivedImage] = useState<{ data: string; mime: string } | null>(null);
+  const [projectorViewport, setProjectorViewport] = useState<Viewport | null>(null);
 
   const signalRef = useRef<SignalClient | null>(null);
   const connectionRef = useRef<IConnection | null>(null);
@@ -112,6 +123,7 @@ export function usePairing(role: PairingRole): UsePairingResult {
     setPeerRole(null);
     setError(null);
     setReceivedImage(null);
+    setProjectorViewport(null);
   }, [disposeAll]);
 
   useEffect(() => disposeAll, [disposeAll]);
@@ -174,6 +186,7 @@ export function usePairing(role: PairingRole): UsePairingResult {
     setRemoteCameraMirrored(false);
     setRedetectRequested(0);
     setPeerRole(null);
+    setProjectorViewport(null);
     setConnectionState('new');
     setPhase('creating');
 
@@ -228,12 +241,28 @@ export function usePairing(role: PairingRole): UsePairingResult {
         }
       }
 
+      else if (msg.t === 'sdp' && msg.from === 'display' && msg.kind === 'stage') {
+        const parsed = parseMessage(msg.sdp);
+        if (parsed?.t === 'viewport') {
+          setProjectorViewport({ w: parsed.w, h: parsed.h, dpr: parsed.dpr });
+        }
+      }
+
       else if (msg.t === 'left') {
         if (msg.role === 'recorder') setRecorderJoined(false);
-        else if (msg.role === 'display') setProjectorJoined(false);
+        else if (msg.role === 'display') {
+          setProjectorJoined(false);
+          setProjectorViewport(null);
+        }
       }
 
       else if (msg.t === 'error') {
+        // A stage frame raced a Projector disconnect; that is not a session failure.
+        if (/^display is not in the room|^Projector is not connected/.test(msg.msg)) {
+          setProjectorJoined(false);
+          setProjectorViewport(null);
+          return;
+        }
         setPhase('failed');
         setError(msg.msg);
       }
@@ -320,6 +349,13 @@ export function usePairing(role: PairingRole): UsePairingResult {
         }
       }
 
+      else if (msg.t === 'sdp' && msg.from === 'admin' && msg.kind === 'stage') {
+        const parsed = parseMessage(msg.sdp);
+        if (parsed?.t === 'stage-frame') setReceivedImage({ data: parsed.data, mime: parsed.mime });
+        else if (parsed?.t === 'stage-clear') setReceivedImage(null);
+      }
+
+      // Legacy relay push (relays deployed after M4).
       else if (msg.t === 'push') {
         setReceivedImage({ data: msg.data, mime: msg.mime });
       }
@@ -338,15 +374,38 @@ export function usePairing(role: PairingRole): UsePairingResult {
     });
   }, [disposeAll, openConnection, phase, role]);
 
-  // ── Admin: push image to Projector via WS relay ───────────────────────────
+  // ── Link B stage over the WS relay ────────────────────────────────────────
 
-  const pushImage = useCallback((dataUrl: string) => {
+  const sendStageFrame = useCallback((dataUrl: string, width: number, height: number) => {
     const signal = signalRef.current;
-    if (!signal) return;
+    if (!signal || !projectorJoined) return;
     const commaIdx = dataUrl.indexOf(',');
     const mime = commaIdx > 0 ? dataUrl.slice(5, commaIdx).replace(';base64', '') : 'image/jpeg';
     const data = commaIdx > 0 ? dataUrl.slice(commaIdx + 1) : dataUrl;
-    signal.pushToDisplay(data, mime);
+    signal.relayStage('display', serializeMessage({
+      v: 1,
+      t: 'stage-frame',
+      id: String(Date.now()),
+      mime,
+      data,
+      w: width,
+      h: height,
+    }));
+  }, [projectorJoined]);
+
+  const clearStage = useCallback(() => {
+    if (!projectorJoined) return;
+    signalRef.current?.relayStage('display', serializeMessage({ v: 1, t: 'stage-clear' }));
+  }, [projectorJoined]);
+
+  const sendViewport = useCallback((viewport: Viewport) => {
+    signalRef.current?.relayStage('admin', serializeMessage({
+      v: 1,
+      t: 'viewport',
+      w: viewport.w,
+      h: viewport.h,
+      dpr: viewport.dpr,
+    }));
   }, []);
 
   // ── Recorder: attach camera track ─────────────────────────────────────────
@@ -385,12 +444,15 @@ export function usePairing(role: PairingRole): UsePairingResult {
     error,
     busy: phase === 'creating' || phase === 'joining' || phase === 'exchanging' || phase === 'connecting',
     receivedImage,
+    projectorViewport,
     createRoom,
     joinRoom,
     attachVideoTrack,
     updateCameraFacingMode,
     requestRedetection,
-    pushImage,
+    sendStageFrame,
+    clearStage,
+    sendViewport,
     reset,
   };
 }

@@ -1,13 +1,18 @@
 import { Link } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useKeepAwake } from 'expo-keep-awake';
+import { StatusBar } from 'expo-status-bar';
+import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Image,
+  PixelRatio,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -19,6 +24,7 @@ import { ThemedView } from '@/components/themed-view';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { usePairing } from '@/hooks/use-pairing';
 import { useTheme } from '@/hooks/use-theme';
+import type { Viewport } from '@/lib/stage';
 import { useSessionStore } from '@/store/session';
 
 type LocalContent =
@@ -64,6 +70,21 @@ function ProjectorWorkspace() {
     void pairing.joinRoom(trimmed);
   };
 
+  if (connected) {
+    return (
+      <FullScreenProjector
+        imageUri={displayImage}
+        localCode={localCode}
+        showingLocal={localContent !== null}
+        onLocalImage={handleLocalImage}
+        onLocalCode={handleLocalCode}
+        onClearLocal={clearLocalContent}
+        sendViewport={pairing.sendViewport}
+        onDisconnect={() => { pairing.reset(); setCodeInput(''); setLocalContent(null); }}
+      />
+    );
+  }
+
   return (
     <ThemedView style={styles.root}>
       <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
@@ -91,7 +112,8 @@ function ProjectorWorkspace() {
           <View style={styles.heading}>
             <ThemedText type="title" style={styles.title}>Projector</ThemedText>
             <ThemedText themeColor="textSecondary" style={styles.subtitle}>
-              Enter the session code from Admin to connect. Images and code will appear full-screen.
+              Enter the session code from Admin to connect. This screen then goes full-screen and shows exactly
+              what Admin places in its phone frame.
             </ThemedText>
           </View>
 
@@ -144,60 +166,7 @@ function ProjectorWorkspace() {
               </View>
             )}
 
-            {connected && (
-              <>
-                <View style={[styles.connectedBadge, { backgroundColor: theme.success + '22', borderColor: theme.success }]}>
-                  <View style={[styles.dot, { backgroundColor: theme.success }]} />
-                  <ThemedText type="smallBold" style={{ color: theme.success }}>Connected to Admin</ThemedText>
-                </View>
-
-                <View style={[styles.display, { backgroundColor: '#05070A', borderColor: theme.border }]}>
-                  {localCode ? (
-                    <ScrollView style={styles.codeScroll} contentContainerStyle={styles.codeContent}>
-                      <Text selectable style={styles.codeText}>{localCode}</Text>
-                    </ScrollView>
-                  ) : displayImage ? (
-                    <Image
-                      source={{ uri: displayImage }}
-                      style={styles.displayImage}
-                      resizeMode="contain"
-                    />
-                  ) : (
-                    <>
-                      <ThemedText style={styles.displayPlaceholder} themeColor="textSecondary">
-                        Waiting for content from Admin…
-                      </ThemedText>
-                      <ThemedText type="small" themeColor="textSecondary">
-                        Admin will push an image once Recorder is live. You can also drop an image or paste code below.
-                      </ThemedText>
-                    </>
-                  )}
-                </View>
-
-                {localContent ? (
-                  <View style={[styles.localBadge, { borderColor: theme.accent, backgroundColor: theme.backgroundElement }]}>
-                    <ThemedText type="smallBold" style={{ color: theme.accent }}>
-                      Showing local {localContent.kind === 'image' ? 'image' : 'code'}
-                    </ThemedText>
-                    <Pressable accessibilityRole="button" onPress={clearLocalContent}>
-                      <ThemedText type="smallBold" style={{ color: theme.accent }}>Show Admin content</ThemedText>
-                    </Pressable>
-                  </View>
-                ) : null}
-
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={() => { pairing.reset(); setCodeInput(''); setLocalContent(null); }}
-                  style={({ pressed }) => [
-                    styles.secondaryBtn,
-                    { borderColor: theme.border, backgroundColor: pressed ? theme.backgroundSelected : 'transparent' },
-                  ]}>
-                  <ThemedText type="smallBold">Disconnect</ThemedText>
-                </Pressable>
-              </>
-            )}
-
-            {!connected && localContent ? (
+            {localContent ? (
               <View style={[styles.localPreview, { borderColor: theme.border, backgroundColor: theme.backgroundElement }]}>
                 <ThemedText type="smallBold">Local preview</ThemedText>
                 {localCode ? (
@@ -219,6 +188,99 @@ function ProjectorWorkspace() {
         </ScrollView>
       </SafeAreaView>
     </ThemedView>
+  );
+}
+
+type FullScreenProps = {
+  imageUri: string | null;
+  localCode: string | null;
+  showingLocal: boolean;
+  onLocalImage: (dataUrl: string) => void;
+  onLocalCode: (text: string) => void;
+  onClearLocal: () => void;
+  sendViewport: (viewport: Viewport) => void;
+  onDisconnect: () => void;
+};
+
+/**
+ * Connected Projector: the whole screen is the stage Admin composes. The
+ * screen size is reported so Admin's phone frame matches it pixel for pixel.
+ */
+function FullScreenProjector({
+  imageUri,
+  localCode,
+  showingLocal,
+  onLocalImage,
+  onLocalCode,
+  onClearLocal,
+  sendViewport,
+  onDisconnect,
+}: FullScreenProps) {
+  useKeepAwake(undefined, { suppressDeactivateWarnings: true });
+  const { width, height } = useWindowDimensions();
+  const [controlsVisible, setControlsVisible] = useState(false);
+
+  // Re-report on rotation, browser full-screen, or window resize.
+  useEffect(() => {
+    if (width <= 0 || height <= 0) return;
+    const timer = setTimeout(() => sendViewport({ w: width, h: height, dpr: PixelRatio.get() }), 150);
+    return () => clearTimeout(timer);
+  }, [height, sendViewport, width]);
+
+  const enterFullscreen = useCallback(() => {
+    if (Platform.OS !== 'web' || typeof document === 'undefined') return;
+    void document.documentElement.requestFullscreen?.().catch(() => undefined);
+    setControlsVisible(false);
+  }, []);
+
+  return (
+    <View style={styles.fullscreen}>
+      <StatusBar hidden />
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="Show Projector controls"
+        style={StyleSheet.absoluteFill}
+        onPress={() => setControlsVisible((visible) => !visible)}>
+        {localCode ? (
+          <ScrollView style={styles.fullscreenCode} contentContainerStyle={styles.codeContent}>
+            <Text selectable style={styles.codeText}>{localCode}</Text>
+          </ScrollView>
+        ) : imageUri ? (
+          <Image source={{ uri: imageUri }} style={StyleSheet.absoluteFill} resizeMode="contain" />
+        ) : (
+          <View style={styles.fullscreenWaiting}>
+            <Text style={styles.fullscreenWaitingTitle}>Connected to Admin</Text>
+            <Text style={styles.fullscreenWaitingHint}>
+              Waiting for Admin to place something on the Projector screen. Tap for options.
+            </Text>
+          </View>
+        )}
+      </Pressable>
+
+      {controlsVisible ? (
+        <View style={styles.controlsSheet}>
+          <View style={styles.controlsRow}>
+            {Platform.OS === 'web' ? (
+              <Pressable accessibilityRole="button" onPress={enterFullscreen} style={styles.controlBtn}>
+                <Text style={styles.controlText}>⤢ Full screen</Text>
+              </Pressable>
+            ) : null}
+            {showingLocal ? (
+              <Pressable accessibilityRole="button" onPress={onClearLocal} style={styles.controlBtn}>
+                <Text style={styles.controlText}>Show Admin content</Text>
+              </Pressable>
+            ) : null}
+            <Pressable accessibilityRole="button" onPress={onDisconnect} style={styles.controlBtn}>
+              <Text style={[styles.controlText, styles.controlDanger]}>Disconnect</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" onPress={() => setControlsVisible(false)} style={styles.controlBtn}>
+              <Text style={styles.controlText}>Hide</Text>
+            </Pressable>
+          </View>
+          <ProjectorDropZone onImage={onLocalImage} onCode={onLocalCode} />
+        </View>
+      ) : null}
+    </View>
   );
 }
 
@@ -254,38 +316,38 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   primaryBtn: { alignSelf: 'flex-start', borderRadius: 10, paddingHorizontal: Spacing.four, paddingVertical: Spacing.three },
-  secondaryBtn: { alignSelf: 'flex-start', borderWidth: 1, borderRadius: 10, paddingHorizontal: Spacing.four, paddingVertical: Spacing.three },
   statusRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two },
-  connectedBadge: { flexDirection: 'row', alignItems: 'center', gap: Spacing.two, borderWidth: 1, borderRadius: 12, padding: Spacing.three },
-  dot: { width: 8, height: 8, borderRadius: 4 },
-  display: {
-    width: '100%',
-    aspectRatio: 16 / 9,
-    minHeight: 300,
-    borderWidth: 1,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Spacing.two,
-    padding: Spacing.four,
-    overflow: 'hidden',
-  },
-  displayPlaceholder: { fontSize: 18, textAlign: 'center' },
-  displayImage: { width: '100%', height: '100%', borderRadius: 14 },
-  codeScroll: { width: '100%', flex: 1, backgroundColor: '#05070A', borderRadius: 12 },
   codeContent: { padding: Spacing.three },
   codeText: { fontFamily: 'monospace', fontSize: 15, lineHeight: 22, color: '#E8EAED' },
-  localBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
-    gap: Spacing.two,
-    borderWidth: 1,
-    borderRadius: 10,
-    padding: Spacing.three,
-  },
   localPreview: { borderWidth: 1, borderRadius: 12, padding: Spacing.three, gap: Spacing.two },
   localCodeScroll: { maxHeight: 220, backgroundColor: '#05070A', borderRadius: 10 },
+  fullscreen: { flex: 1, backgroundColor: '#000000' },
+  fullscreenCode: { flex: 1, backgroundColor: '#05070A' },
+  fullscreenWaiting: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.two, padding: Spacing.four },
+  fullscreenWaitingTitle: { color: '#E8EAED', fontSize: 20, fontWeight: '600', textAlign: 'center' },
+  fullscreenWaitingHint: { color: '#8A93A0', fontSize: 14, lineHeight: 20, textAlign: 'center', maxWidth: 360 },
+  controlsSheet: {
+    position: 'absolute',
+    left: Spacing.three,
+    right: Spacing.three,
+    bottom: Spacing.three,
+    gap: Spacing.three,
+    padding: Spacing.three,
+    borderRadius: 16,
+    backgroundColor: 'rgba(21,25,30,0.94)',
+    borderWidth: 1,
+    borderColor: '#2C333C',
+  },
+  controlsRow: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.two },
+  controlBtn: {
+    borderWidth: 1,
+    borderColor: '#2C333C',
+    borderRadius: 10,
+    paddingHorizontal: Spacing.three,
+    paddingVertical: Spacing.two,
+    backgroundColor: '#20262D',
+  },
+  controlText: { color: '#F4F6F8', fontSize: 14, fontWeight: '600' },
+  controlDanger: { color: '#FF7A70' },
   localPreviewImage: { width: '100%', height: 220, borderRadius: 10, backgroundColor: '#05070A' },
 });

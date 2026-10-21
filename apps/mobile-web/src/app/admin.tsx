@@ -7,13 +7,13 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  TextInput,
   useWindowDimensions,
   View,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { AccessBoundary } from '@/components/access-boundary';
+import { ProjectorStage } from '@/components/projector-stage';
 import { ThemedText } from '@/components/themed-text';
 import { ThemedView } from '@/components/themed-view';
 import { VideoView } from '@/components/video-view';
@@ -27,8 +27,6 @@ import { detectAndOverlay, smoothQuad, warpAndCrop } from '@/lib/quad';
 import type { QuadCorners } from '@/lib/quad';
 import { downloadCapture } from '@/lib/download';
 import { useSessionStore } from '@/store/session';
-
-type SendMode = 'image' | 'code';
 
 type DeletePrompt = { kind: 'capture'; id: string } | { kind: 'all' };
 
@@ -64,13 +62,9 @@ function AdminWorkspace() {
   const { width, height } = useWindowDimensions();
   const lock = useSessionStore((s) => s.lock);
   const pairing = usePairing('admin');
-  const [sendMode, setSendMode] = useState<SendMode>('code');
-  const [code, setCode] = useState('');
-  const [language, setLanguage] = useState('');
   const [gallery, setGallery] = useState<CapturedFrame[]>([]);
   const [activeCapture, setActiveCapture] = useState<CapturedFrame | null>(null);
   const [captureBusy, setCaptureBusy] = useState(false);
-  const [sendStatus, setSendStatus] = useState<string | null>(null);
   const [zoomVisible, setZoomVisible] = useState(false);
   const [detectedCorners, setDetectedCorners] = useState<QuadCorners | null>(null);
   const [previewOverlayUrl, setPreviewOverlayUrl] = useState<string | null>(null);
@@ -161,7 +155,6 @@ function AdminWorkspace() {
       if (!frame) return;
       setGallery((prev) => [frame, ...prev].slice(0, 20));
       setActiveCapture(frame);
-      setSendStatus(null);
       setDownloadStatus(null);
       cropIdRef.current++;
       setPreCrop(null);
@@ -193,7 +186,6 @@ function AdminWorkspace() {
     setPreCrop(null);
     setWasCropped(false);
     setDownloadStatus(null);
-    setSendStatus(null);
     setZoomVisible(false);
     setZoomScale(1);
   }, []);
@@ -306,14 +298,6 @@ function AdminWorkspace() {
     const timer = setTimeout(() => { void autoCrop(); }, 450);
     return () => clearTimeout(timer);
   }, [activeCapture, autoCrop, autoCropEnabled, detectedCorners, quadProcessing, wasCropped]);
-
-  const handleSendToProjector = useCallback(() => {
-    if (sendMode === 'image' && activeCapture) {
-      pairing.pushImage(activeCapture.dataUrl);
-      setSendStatus('Sent!');
-      setTimeout(() => setSendStatus(null), 2500);
-    }
-  }, [sendMode, activeCapture, pairing]);
 
   return (
     <ThemedView style={styles.root}>
@@ -671,98 +655,21 @@ function AdminWorkspace() {
               )}
             </View>
 
-            {/* Right pane: send to Projector */}
+            {/* Right pane: phone-shaped Projector stage */}
             <View style={[styles.pane, styles.paneRight, { backgroundColor: theme.backgroundElement, borderColor: theme.border }]}>
               <View style={styles.paneHeader}>
-                <ThemedText type="smallBold">Send to Projector</ThemedText>
+                <ThemedText type="smallBold">Projector screen</ThemedText>
                 <ThemedText type="code" themeColor={projectorReady ? 'text' : 'textSecondary'}>
                   {projectorReady ? 'LINK B · READY' : 'LINK B · WAITING'}
                 </ThemedText>
               </View>
-
-              <View style={styles.tabs}>
-                {(['image', 'code'] as const).map((tab) => {
-                  const active = sendMode === tab;
-                  return (
-                    <Pressable
-                      key={tab}
-                      accessibilityRole="tab"
-                      onPress={() => setSendMode(tab)}
-                      style={[
-                        styles.tab,
-                        { backgroundColor: active ? theme.backgroundSelected : 'transparent', borderColor: active ? theme.accent : theme.border },
-                      ]}>
-                      <ThemedText type="smallBold" themeColor={active ? 'text' : 'textSecondary'}>
-                        {tab === 'image' ? 'Image' : 'Code'}
-                      </ThemedText>
-                    </Pressable>
-                  );
-                })}
-              </View>
-
-              {sendMode === 'code' ? (
-                <View style={{ gap: Spacing.two }}>
-                  <TextInput
-                    multiline
-                    value={code}
-                    onChangeText={setCode}
-                    placeholder="Paste or type code to show on the Projector…"
-                    placeholderTextColor={theme.textSecondary}
-                    selectionColor={theme.accent}
-                    style={[styles.codeInput, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
-                    textAlignVertical="top"
-                  />
-                  <TextInput
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    value={language}
-                    onChangeText={setLanguage}
-                    placeholder="Language (optional)"
-                    placeholderTextColor={theme.textSecondary}
-                    selectionColor={theme.accent}
-                    style={[styles.langInput, { backgroundColor: theme.background, borderColor: theme.border, color: theme.text }]}
-                  />
-                </View>
-              ) : activeCapture ? (
-                <View style={{ gap: Spacing.two, alignItems: 'center' }}>
-                  <Image
-                    source={{ uri: activeCapture.dataUrl }}
-                    style={styles.capturePreview}
-                    resizeMode="contain"
-                  />
-                  <ThemedText type="small" themeColor="textSecondary" style={{ fontSize: 12 }}>
-                    {activeCapture.width} × {activeCapture.height} · {new Date(activeCapture.ts).toLocaleTimeString()}
-                  </ThemedText>
-                </View>
-              ) : (
-                <View style={[styles.imageDrop, { borderColor: theme.border, backgroundColor: theme.background }]}>
-                  <ThemedText type="smallBold" themeColor="textSecondary">No capture selected</ThemedText>
-                  <ThemedText type="small" themeColor="textSecondary">
-                    {recorderLive ? 'Press "Capture still" to grab a frame.' : 'Connect Recorder first, then capture.'}
-                  </ThemedText>
-                </View>
-              )}
-
-              <Pressable
-                accessibilityRole="button"
-                disabled={!projectorReady || !(sendMode === 'image' && activeCapture)}
-                onPress={handleSendToProjector}
-                style={({ pressed }) => [
-                  styles.sendBtn,
-                  {
-                    backgroundColor: theme.accent,
-                    opacity: (!projectorReady || !(sendMode === 'image' && activeCapture)) ? 0.4 : pressed ? 0.8 : 1,
-                  },
-                ]}>
-                <ThemedText type="smallBold" style={{ color: theme.accentText }}>
-                  {sendStatus ?? 'Send to Projector'}
-                </ThemedText>
-              </Pressable>
-              {!projectorReady && (
-                <ThemedText type="small" themeColor="textSecondary">
-                  Projector must connect to this session first.
-                </ThemedText>
-              )}
+              <ProjectorStage
+                viewport={pairing.projectorViewport}
+                projectorReady={projectorReady}
+                captureDataUrl={activeCapture?.dataUrl ?? null}
+                onFrame={pairing.sendStageFrame}
+                onClear={pairing.clearStage}
+              />
             </View>
           </View>
 
@@ -912,7 +819,7 @@ const styles = StyleSheet.create({
   workspaceWide: { flexDirection: 'row', alignItems: 'stretch' },
   pane: { borderWidth: 1, borderRadius: 20, padding: Spacing.four, gap: Spacing.three },
   paneLeft: { flex: 2 },
-  paneRight: { flex: 1 },
+  paneRight: { flex: 1, minWidth: 340 },
   paneHeader: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   videoBox: { height: 340, borderWidth: 1, borderRadius: 14, overflow: 'hidden', backgroundColor: '#05070A' },
   galleryWrap: { borderWidth: 1, borderRadius: 14, padding: Spacing.three, gap: Spacing.two },
@@ -925,13 +832,6 @@ const styles = StyleSheet.create({
   captureSection: { borderWidth: 1, borderRadius: 14, padding: Spacing.three, gap: Spacing.two },
   capturePreviewLarge: { width: '100%', aspectRatio: 4 / 3, borderRadius: 10 },
   iconBtn: { borderWidth: 1, borderRadius: 10, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
-  tabs: { flexDirection: 'row', gap: Spacing.two },
-  tab: { borderWidth: 1, borderRadius: 999, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },
-  codeInput: { minHeight: 190, borderWidth: 1, borderRadius: 12, fontSize: 14, lineHeight: 20, padding: Spacing.three },
-  langInput: { borderWidth: 1, borderRadius: 12, fontSize: 14, paddingHorizontal: Spacing.three, paddingVertical: Spacing.three },
-  imageDrop: { minHeight: 200, borderWidth: 1, borderStyle: 'dashed', borderRadius: 12, alignItems: 'center', justifyContent: 'center', gap: Spacing.two, padding: Spacing.four },
-  capturePreview: { width: '100%', aspectRatio: 16 / 9, borderRadius: 10, backgroundColor: '#05070A' },
-  sendBtn: { alignItems: 'center', borderRadius: 12, paddingHorizontal: Spacing.four, paddingVertical: Spacing.three },
   zoomOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.96)' },
   zoomToolbar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: Spacing.three, paddingTop: 48, paddingBottom: Spacing.three },
   zoomBtn: { borderWidth: 1, borderColor: 'rgba(255,255,255,0.35)', borderRadius: 10, paddingHorizontal: Spacing.three, paddingVertical: Spacing.two },

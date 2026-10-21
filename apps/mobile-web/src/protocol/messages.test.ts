@@ -79,6 +79,27 @@ describe('parseMessage', () => {
     ).toBeNull();
   });
 
+  it('round-trips stage viewport, frame, and clear messages', () => {
+    const messages = [
+      { v: PROTOCOL_VERSION, t: 'viewport' as const, w: 390, h: 844, dpr: 3 },
+      { v: PROTOCOL_VERSION, t: 'stage-frame' as const, id: 'f1', mime: 'image/jpeg', data: 'AAAA', w: 1170, h: 2532 },
+      { v: PROTOCOL_VERSION, t: 'stage-clear' as const },
+    ];
+
+    for (const message of messages) {
+      expect(parseMessage(serializeMessage(message))).toEqual(message);
+    }
+  });
+
+  it('rejects stage messages with unusable sizes or non-image payloads', () => {
+    expect(parseMessage(JSON.stringify({ v: PROTOCOL_VERSION, t: 'viewport', w: 0, h: 844, dpr: 3 }))).toBeNull();
+    expect(
+      parseMessage(
+        JSON.stringify({ v: PROTOCOL_VERSION, t: 'stage-frame', id: 'f', mime: 'text/html', data: 'x', w: 1, h: 1 }),
+      ),
+    ).toBeNull();
+  });
+
   it('rejects an unknown role', () => {
     expect(
       parseMessage(
