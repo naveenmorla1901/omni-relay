@@ -55,9 +55,9 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] Web camera source (`getUserMedia`) behind `ICameraSource`
 - [x] Native camera source (`react-native-webrtc` mediaDevices) — `camera.ts`
 - [x] 3-attempt getUserMedia fallback chain: 4K preferred → 1080p → 480p; `contentHint='detail'`
-- [~] Auto exposure/focus/white-balance settle (`CAMERA_AUTO_SETTLE_MS`) before lock; best-effort on web. Native `react-native-webrtc` currently ignores these advanced constraints, so focus/exposure remain hardware-auto there.
+- [x] Camera sensor runs at `CAMERA_CAPTURE_FPS` (30) so auto-exposure cannot pick ~1/8 s shutters that smear handheld text; the encoder still caps at `TARGET_FPS` (8). Web keeps focus/exposure continuous and locks only white balance after `CAMERA_AUTO_SETTLE_MS`. Native tuning calls are no-ops: react-native-webrtc's `applyConstraints({advanced})` fills missing size/fps with 1280×720@30 defaults, which silently dropped the live stream to 720×1280 and reset the selected lens.
 - [x] Rear camera default (`facingMode: environment`)
-- [x] `flipCamera()`, `getActualSettings()`, `lockExposureFocusWhiteBalance()`; facing mode + mirror state sent to Admin over the data channel
+- [x] `flipCamera()`, `getActualSettings()`, `lockWhiteBalance()`; facing mode + mirror state sent to Admin over the data channel
 - [x] Physical rear-lens discovery + picker: Auto (4K preferred), Ultra-wide, Main · high quality, Telephoto, and numbered Android cameras. Web uses `enumerateDevices`/`deviceId`; native uses react-native-webrtc Camera2/AVFoundation devices. A failed switch falls back to Auto.
 - [x] Text-quality floor for explicit lenses: streams below 1080p (including the observed 528×960 and 720×1280 lens profiles) are rejected and Auto is restored with a visible explanation. Recorder and Admin both warn when the active stream is below 1080p.
 - [x] Remote video track render in Admin (web `<video>` element via `onVideoElement` prop)
