@@ -82,10 +82,10 @@ The single app lives in `apps/mobile-web/src/`:
 
 **Live at:** `https://naveenmorla1901.github.io/omni-relay/`
 **Signaling server:** `wss://omni-relay-production-d45c.up.railway.app` (Railway, `services/signaling/`, PORT=8081)
-**Latest APK:** v0.1.6 on GitHub Releases (`assembleRelease`, debug-keystore signing); v0.1.7 quality build pending
+**Latest APK:** built by `build-android.yml` only when a `v*` tag is pushed (`assembleRelease`, debug-keystore signing) — pushing `main` does not rebuild the APK. v0.1.8 (native 720p-reset fix + 30 fps capture) pending
 
 Completed: M0–M5 — scaffold, room-code pairing, live video, Admin capture gallery, Admin→Projector image push, pure-TS quad detection + perspective warp. APK v0.1.6 was built from `01a7a59` and published to GitHub Releases. The 2026-10-20 device-testing backlog is implemented in code: 4K/detail camera tuning, fixed quad candidate NMS + synthetic regression tests, Re-lock redetect, auto-crop with Undo, 1–4× zoom, capture Download, front-camera mirror sync, and web Projector drag/drop + paste image/code. Follow-up work adds Admin per-capture Delete / per-thumbnail Delete / Clear all with confirmation, and a Recorder physical rear-lens picker (Auto 4K preferred, Ultra-wide, Main · high quality, Telephoto, numbered Android cameras; failed switches fall back to Auto). The v0.1.7 quality pass adds sharpest-of-3 Admin capture, CLAHE, luma-only sharpening, a 16 Mbps ceiling, and a 1080p text floor for explicit lenses. Local checks are green (typecheck, lint, 33 tests, web export); code commit `f890fba`.
 
 Known issues: the deployed Railway relay runs pre-M4 code — Admin→Projector `push` fails in production until `services/signaling` is redeployed. The camera quality/detection/zoom/delete/lens work still needs real-device verification. Some Android builds expose only one logical rear camera or expose 720p auxiliary cameras; v0.1.7 now rejects the latter and restores Auto. Native `react-native-webrtc` ignores focus/exposure/WB constraints, so manual focus/ISO/shutter requires a Vision Camera/Camera2 path.
 
-Next: install APK v0.1.7, confirm low-resolution lenses snap back to Auto, test the sharper capture output, redeploy the relay, then the M5 remainder (anti-moiré/raw-frame fallback) or the native still-capture path.
+Next: install APK v0.1.8, confirm Admin sees 2160×3840 with no low-res warning, test the sharper capture output, redeploy the relay, then the M5 remainder (anti-moiré/raw-frame fallback) or the native still-capture path.

@@ -6,9 +6,9 @@
 > unless a decision is recorded below.
 
 **Last updated:** 2026-10-20
-**Current milestone:** M0–M5 complete (web + Android APK v0.1.6; v0.1.7 quality pass in release). Device-testing backlog implemented: 4K/detail camera tuning, robust quad detection, auto-fit with Undo, 1–4× zoom, capture Download, camera-flip mirror sync, Projector drag/drop + paste. Follow-up: Admin capture delete/clear and a Recorder physical rear-lens picker (Auto 4K, Ultra-wide, Main · high quality, Telephoto when exposed). The 2026-10-20 quality pass adds sharpest-frame capture, CLAHE, luma-only sharpening, a 16 Mbps ceiling, and a 1080p text floor for explicit lenses.
-**Current stop point:** The quality pass is implemented and local checks are green (typecheck, lint, 33 tests, web export). Admin captures the sharpest of three live frames, then runs contrast/brightness → percentile auto-levels → CLAHE → luma-only unsharp → JPEG 97%. The encoder ceiling is 16 Mbps, native encoder params are re-applied after a lens switch, and explicit lenses that deliver less than 1080p switch back to Auto with an explanation. Recorder and Admin both flag low-resolution streams. The downloaded samples contained three 4K captures and three 528×960/720×1280 lens captures; sharpening cannot recover the low-resolution set, so the lens floor is the important fix. APK v0.1.7 is tagged from `f890fba`; the GitHub Actions build and real-device test are pending.
-**Next action:** Install APK v0.1.7 on the Android Recorder (uninstall v0.1.6 if Android rejects the debug-keystore signature). Select each rear lens at close range: a 720p lens should snap back to Auto with the text-floor message, while a 4K lens should stay selected. Capture several close-up screens and inspect the sharpest-frame/CLAHE output. Then redeploy the Railway signaling relay from current `main` and re-run remote create/join/push.
+**Current milestone:** M0–M5 complete (web + Android APK v0.1.6; v0.1.7 quality pass; v0.1.8 720p-reset/blur fix in release). Device-testing backlog implemented: 4K/detail camera tuning, robust quad detection, auto-fit with Undo, 1–4× zoom, capture Download, camera-flip mirror sync, Projector drag/drop + paste. Follow-up: Admin capture delete/clear and a Recorder physical rear-lens picker (Auto 4K, Ultra-wide, Main · high quality, Telephoto when exposed). The 2026-10-20 quality pass adds sharpest-frame capture, CLAHE, luma-only sharpening, a 16 Mbps ceiling, and a 1080p text floor for explicit lenses.
+**Current stop point:** The quality pass is implemented and local checks are green (typecheck, lint, 33 tests, web export). Admin captures the sharpest of three live frames, then runs contrast/brightness → percentile auto-levels → CLAHE → luma-only unsharp → JPEG 97%. The encoder ceiling is 16 Mbps, native encoder params are re-applied after a lens switch, and explicit lenses that deliver less than 1080p switch back to Auto with an explanation. Recorder and Admin both flag low-resolution streams. The downloaded samples contained three 4K captures and three 528×960/720×1280 lens captures; sharpening cannot recover the low-resolution set, so the lens floor is the important fix. APK v0.1.7 is tagged from `f890fba`. APK v0.1.8 adds the native 720p-reset fix and 30 fps sensor capture; the GitHub Actions build and real-device test are pending.
+**Next action:** Install APK v0.1.8 on the Android Recorder and confirm Admin reports 2160×3840 with no low-resolution warning (uninstall v0.1.6 if Android rejects the debug-keystore signature). Select each rear lens at close range: a 720p lens should snap back to Auto with the text-floor message, while a 4K lens should stay selected. Capture several close-up screens and inspect the sharpest-frame/CLAHE output. Then redeploy the Railway signaling relay from current `main` and re-run remote create/join/push.
 **As of commit:** `f890fba` (code commit for the capture-quality and low-resolution-lens guard; later docs/APK metadata commits follow)
 **Blocker:** the deployed Railway relay runs pre-M4 code — Admin→Projector `push` fails in production until `services/signaling` is redeployed. Real-device verification of the quality/lens/delete work is still pending. `react-native-webrtc` ignores advanced focus/exposure constraints on native, so Re-lock is only best-effort there; manual ISO/shutter/focus and native still-photo capture need a Vision Camera/Camera2 path. Some Android builds expose only one logical rear camera, and some explicit lenses only support 720p, so Ultra-wide may remain unavailable or be rejected by the text floor.
 
@@ -148,7 +148,8 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [ ] Full responsive Admin polish
 - [x] Web deploy workflow (GitHub Pages, auto on push to main)
 - [x] GitHub Actions Android APK workflow (`build-android.yml` — `assembleRelease` + debug keystore, triggers on `v*` tag or manual)
-- [~] APK v0.1.7 release — tagged from `f890fba`; GitHub Actions build/publish and device test pending
+- [~] APK v0.1.8 release — native 720p-reset fix + 30 fps capture; GitHub Actions build/publish and device test pending
+- [x] APK v0.1.7 release — tagged from `f890fba`; superseded by v0.1.8
 - [x] APK v0.1.6 published to GitHub Releases — built from `01a7a59`; superseded by v0.1.7
 - [x] APK v0.1.5 published to GitHub Releases — previous build, superseded by v0.1.6
 - [x] APK v0.1.4 published to GitHub Releases — previous build, superseded by v0.1.5
@@ -193,7 +194,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] iOS personal use: add GitHub Pages URL to Safari home screen as PWA
 - [x] Android APK CI: `assembleRelease` + debug-keystore signing; triggers on `v*` tag
 - [x] APK v0.1.6 live at `github.com/naveenmorla1901/omni-relay/releases/latest` (superseded by the v0.1.7 build)
-- [~] APK v0.1.7 quality/lens-floor build — GitHub Actions publish pending
+- [~] APK v0.1.8 720p-reset/blur fix build — GitHub Actions publish pending
 - [x] Download APK button on home screen links to latest release
 - [ ] Android keystore + signed release APK (for Play Store / wider distribution)
 
