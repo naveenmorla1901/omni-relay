@@ -149,6 +149,11 @@ export function usePairing(role: PairingRole): UsePairingResult {
   const adminEverReadyRef = useRef(false);
   /** Admin: resend the stage after the Projector (re)joins, not on every heartbeat. */
   const projectorNeedsFrameRef = useRef(true);
+  /** Admin: next move to a fresh relay room (rooms expire on the relay). */
+  const moveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const movingRef = useRef(false);
+  /** Admin: sockets of rooms we moved away from, kept open to redirect late peers. */
+  const retiredSignalsRef = useRef(new Set<SignalClient>());
 
   const setPhase = useCallback((next: PairingPhase) => {
     phaseRef.current = next;
@@ -158,7 +163,7 @@ export function usePairing(role: PairingRole): UsePairingResult {
   // ── Cleanup ────────────────────────────────────────────────────────────────
 
   const clearTimers = useCallback(() => {
-    for (const timer of [retryTimerRef, graceTimerRef, answerTimerRef, readyTimerRef]) {
+    for (const timer of [retryTimerRef, graceTimerRef, answerTimerRef, readyTimerRef, moveTimerRef]) {
       if (timer.current) clearTimeout(timer.current);
       timer.current = null;
     }
@@ -168,6 +173,9 @@ export function usePairing(role: PairingRole): UsePairingResult {
     clearTimers();
     signalRef.current?.close();
     signalRef.current = null;
+    for (const retired of retiredSignalsRef.current) retired.close();
+    retiredSignalsRef.current.clear();
+    movingRef.current = false;
     connectionRef.current?.close();
     connectionRef.current = null;
     connStateRef.current = 'new';
@@ -210,6 +218,17 @@ export function usePairing(role: PairingRole): UsePairingResult {
   }, [disposeAll, setPhase]);
 
   const connectAndJoinRef = useRef<(code: string, silent: boolean) => Promise<void>>(async () => undefined);
+
+  /** Recorder / Display: Admin moved the session to a new relay room; rejoin there. */
+  const followMoveRef = useRef((code: string) => {
+    if (!codeRef.current || codeRef.current === code) return;
+    if (retryTimerRef.current) clearTimeout(retryTimerRef.current);
+    if (readyTimerRef.current) clearTimeout(readyTimerRef.current);
+    retryTimerRef.current = null;
+    readyTimerRef.current = null;
+    retryAttemptRef.current = 0;
+    void connectAndJoinRef.current(code, true);
+  });
 
   const scheduleRejoin = useCallback(() => {
     const code = codeRef.current;
@@ -282,6 +301,8 @@ export function usePairing(role: PairingRole): UsePairingResult {
         setRemoteCameraMirrored(parsed.mirrored);
       } else if (parsed.t === 'redetect' && role === 'admin') {
         setRedetectRequested((count) => count + 1);
+      } else if (parsed.t === 'room-move' && role !== 'admin') {
+        followMoveRef.current(parsed.code);
       }
     });
 
@@ -322,54 +343,26 @@ export function usePairing(role: PairingRole): UsePairingResult {
     }
   }, [openConnection, scheduleRejoin, setPhase]);
 
-  // ── Admin: create room ─────────────────────────────────────────────────────
+  // ── Admin: relay socket handlers (shared by the first room and each move) ──
 
-  const createRoom = useCallback(async () => {
-    const url = CONFIG.SIGNALING_WS_URL;
-    if (!url) {
-      setPhase('failed');
-      setError('No signaling server configured. Set EXPO_PUBLIC_SIGNALING_URL and rebuild.');
-      return;
-    }
+  const moveRoomRef = useRef<() => Promise<void>>(async () => undefined);
 
-    disposeAll();
-    setError(null);
-    setRoomCode(null);
-    setRecorderJoined(false);
-    setProjectorJoined(false);
-    setRemoteStream(null);
-    setRemoteCameraMirrored(false);
-    setRedetectRequested(0);
-    setPeerRole(null);
-    setProjectorViewport(null);
-    projectorViewportRef.current = null;
-    setLastAckId(null);
-    setConnectionState('new');
-    setPhase('creating');
+  const scheduleMove = useCallback((delay: number) => {
+    if (moveTimerRef.current) clearTimeout(moveTimerRef.current);
+    moveTimerRef.current = setTimeout(() => {
+      moveTimerRef.current = null;
+      void moveRoomRef.current();
+    }, delay);
+  }, []);
 
-    const signal = new SignalClient();
-    signalRef.current = signal;
-
-    try {
-      await signal.connect(url);
-    } catch (err) {
-      if (signalRef.current === signal) {
-        setPhase('failed');
-        setError(toMsg(err));
-        signal.close();
-        signalRef.current = null;
-      }
-      return;
-    }
-
-    signal.createRoom();
-
+  const attachAdminSignal = useCallback((signal: SignalClient) => {
     signal.onMsg(async (msg) => {
       if (signalRef.current !== signal) return;
 
       if (msg.t === 'created') {
         setRoomCode(msg.code);
         setPhase('waiting-for-peer');
+        scheduleMove(CONFIG.ROOM_MOVE_MS);
       }
 
       else if (msg.t === 'joined') {
@@ -450,7 +443,7 @@ export function usePairing(role: PairingRole): UsePairingResult {
           setProjectorJoined(false);
           setRecorderJoined(false);
           setPhase('failed');
-          setError('The relay closed this session (it expires after 30 minutes). Create a new session and enter the new code on the Recorder and Projector.');
+          setError('The relay closed this session. Create a new session and enter the new code on the Recorder and Projector.');
           return;
         }
         setPhase('failed');
@@ -465,9 +458,114 @@ export function usePairing(role: PairingRole): UsePairingResult {
       setProjectorJoined(false);
       setRecorderJoined(false);
       setError('Lost the relay connection. The live feed keeps running, but the Projector and new joins need a new session.');
+      if (moveTimerRef.current) clearTimeout(moveTimerRef.current);
+      moveTimerRef.current = null;
       if (phaseRef.current !== 'connected') setPhase('failed');
     });
-  }, [disposeAll, openConnection, setPhase]);
+  }, [openConnection, scheduleMove, setPhase]);
+
+  /**
+   * Admin: move the session to a fresh relay room before the relay expires
+   * the current one, and tell the Recorder/Projector to follow. Their WebRTC
+   * link and screens keep running; only the code Admin shows changes.
+   */
+  const moveRoom = useCallback(async () => {
+    const url = CONFIG.SIGNALING_WS_URL;
+    const old = signalRef.current;
+    if (role !== 'admin' || !url || !old?.isOpen() || movingRef.current) return;
+    movingRef.current = true;
+    const next = new SignalClient();
+    try {
+      await next.connect(url);
+      const code = await new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('No room from the relay.')), 10_000);
+        const off = next.onMsg((msg) => {
+          if (msg.t !== 'created') return;
+          clearTimeout(timer);
+          off();
+          resolve(msg.code);
+        });
+        next.createRoom();
+      });
+      if (signalRef.current !== old || !old.isOpen()) {
+        next.close();
+        return;
+      }
+
+      const move = serializeMessage({ v: 1, t: 'room-move', code });
+      signalRef.current = next;
+      attachAdminSignal(next);
+      setRoomCode(code);
+      scheduleMove(CONFIG.ROOM_MOVE_MS);
+
+      old.relayStage('display', move);
+      old.relayStage('recorder', move);
+      connectionRef.current?.sendData(move);
+      // Peers that were mid-rejoin land in the old room: point them onward.
+      old.onMsg((msg) => {
+        if (msg.t === 'joined') old.relayStage(msg.role, move);
+        else if (msg.t === 'sdp' && (msg.from === 'display' || msg.from === 'recorder')) old.relayStage(msg.from, move);
+      });
+      retiredSignalsRef.current.add(old);
+      setTimeout(() => {
+        old.close();
+        retiredSignalsRef.current.delete(old);
+      }, CONFIG.ROOM_RETIRE_MS);
+    } catch {
+      next.close();
+      if (signalRef.current === old) scheduleMove(CONFIG.ROOM_MOVE_RETRY_MS);
+    } finally {
+      movingRef.current = false;
+    }
+  }, [attachAdminSignal, role, scheduleMove]);
+
+  useEffect(() => {
+    moveRoomRef.current = moveRoom;
+  }, [moveRoom]);
+
+  // ── Admin: create room ─────────────────────────────────────────────────────
+
+  const createRoom = useCallback(async () => {
+    const url = CONFIG.SIGNALING_WS_URL;
+    if (!url) {
+      setPhase('failed');
+      setError('No signaling server configured. Set EXPO_PUBLIC_SIGNALING_URL and rebuild.');
+      return;
+    }
+
+    disposeAll();
+    setError(null);
+    setRoomCode(null);
+    setRecorderJoined(false);
+    setProjectorJoined(false);
+    setRemoteStream(null);
+    setRemoteCameraMirrored(false);
+    setRedetectRequested(0);
+    setPeerRole(null);
+    setProjectorViewport(null);
+    projectorViewportRef.current = null;
+    setLastAckId(null);
+    setConnectionState('new');
+    setPhase('creating');
+
+    const signal = new SignalClient();
+    signalRef.current = signal;
+
+    try {
+      await signal.connect(url);
+    } catch (err) {
+      if (signalRef.current === signal) {
+        setPhase('failed');
+        setError(toMsg(err));
+        signal.close();
+        signalRef.current = null;
+      }
+      return;
+    }
+
+    attachAdminSignal(signal);
+    signal.createRoom();
+  }, [attachAdminSignal, disposeAll, setPhase]);
 
   // ── Recorder / Display: join room ──────────────────────────────────────────
 
@@ -558,6 +656,10 @@ export function usePairing(role: PairingRole): UsePairingResult {
 
       else if (msg.t === 'sdp' && msg.from === 'admin' && msg.kind === 'stage') {
         const parsed = parseMessage(msg.sdp);
+        if (parsed?.t === 'room-move') {
+          followMoveRef.current(parsed.code);
+          return;
+        }
         if (parsed?.t === 'stage-frame' || parsed?.t === 'stage-clear' || parsed?.t === 'stage-ready') {
           adminEverReadyRef.current = true;
           if (readyTimerRef.current) clearTimeout(readyTimerRef.current);

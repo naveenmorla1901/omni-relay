@@ -59,7 +59,13 @@ export type StageMsg =
   /** Admin answers a `viewport`: its stage editor is open (older Admins never send it). */
   | { v: ProtocolVersion; t: 'stage-ready' }
   /** Projector confirms a `stage-frame` is decoded and on screen. */
-  | { v: ProtocolVersion; t: 'stage-ack'; id: string };
+  | { v: ProtocolVersion; t: 'stage-ack'; id: string }
+  /**
+   * Admin moved the session to a fresh relay room (the deployed relay expires
+   * rooms 30 min after creation). Recorder/Projector rejoin `code` silently.
+   * Sent over the relay and, to the Recorder, over Link A too.
+   */
+  | { v: ProtocolVersion; t: 'room-move'; code: string };
 
 export type ProtocolMessage = ControlMsg | DisplayPush | StageMsg;
 
@@ -164,6 +170,8 @@ function isStageMsg(value: Record<string, unknown>): value is StageMsg {
       return true;
     case 'stage-ack':
       return isNonEmptyString(value.id);
+    case 'room-move':
+      return typeof value.code === 'string' && /^[A-Z0-9]{6}$/.test(value.code);
     default:
       return false;
   }

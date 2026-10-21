@@ -18,7 +18,7 @@ const EXTRA_ACCESS_KEYS = (process.env.EXPO_PUBLIC_ACCESS_KEYS ?? '')
 export const ACCESS_KEYS = Array.from(new Set([ACCESS_KEY, ...EXTRA_ACCESS_KEYS]));
 
 /** Shown in every role's top bar so stale tabs/APKs are obvious. Bump with each `v*` tag. */
-export const APP_BUILD = 'v0.1.12';
+export const APP_BUILD = 'v0.1.13';
 
 export const CONFIG = {
   /** Low FPS is intentional: preserve pixels for photographed text. Encoder cap only. */
@@ -94,6 +94,15 @@ export const CONFIG = {
   /** Recorder/Projector rejoin the room after the relay socket drops (backoff). */
   RECONNECT_BASE_MS: 1_000,
   RECONNECT_MAX_MS: 15_000,
+  /**
+   * Admin moves the session to a fresh relay room this often. The deployed
+   * relay expires rooms 30 min after creation; connected devices follow the
+   * move on their own, so a session lasts as long as Admin stays open.
+   */
+  ROOM_MOVE_MS: 25 * 60_000,
+  ROOM_MOVE_RETRY_MS: 30_000,
+  /** The old room's socket stays open this long to redirect late peers, past the relay's expiry. */
+  ROOM_RETIRE_MS: 7 * 60_000,
   /** A Link A ICE `disconnected` lasting this long is treated as failed and re-offered. */
   LINK_DISCONNECT_GRACE_MS: 4_000,
   DATACHANNEL_CHUNK: 16 * 1024,

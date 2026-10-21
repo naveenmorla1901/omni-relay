@@ -86,6 +86,7 @@ describe('parseMessage', () => {
       { v: PROTOCOL_VERSION, t: 'stage-clear' as const },
       { v: PROTOCOL_VERSION, t: 'stage-ready' as const },
       { v: PROTOCOL_VERSION, t: 'stage-ack' as const, id: 'f1' },
+      { v: PROTOCOL_VERSION, t: 'room-move' as const, code: 'ZSXBC4' },
     ];
 
     for (const message of messages) {
@@ -101,6 +102,7 @@ describe('parseMessage', () => {
       ),
     ).toBeNull();
     expect(parseMessage(JSON.stringify({ v: PROTOCOL_VERSION, t: 'stage-ack', id: '' }))).toBeNull();
+    expect(parseMessage(JSON.stringify({ v: PROTOCOL_VERSION, t: 'room-move', code: 'ab<c' }))).toBeNull();
   });
 
   it('rejects an unknown role', () => {

@@ -21,9 +21,11 @@ function generateCode() {
   return code;
 }
 
-// Rooms expire after 30 idle minutes; any relayed message keeps them alive.
+// Rooms expire after 100 idle minutes; any relayed message (the Projector's
+// 15 s heartbeat included) keeps them alive, so a session in use never expires.
+const ROOM_IDLE_MS = 100 * 60 * 1000;
 setInterval(() => {
-  const cutoff = Date.now() - 30 * 60 * 1000;
+  const cutoff = Date.now() - ROOM_IDLE_MS;
   for (const [code, room] of rooms) {
     if (room.lastActive < cutoff) {
       for (const peer of room.peers.values()) peer.roomCode = null;
