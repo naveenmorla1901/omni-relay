@@ -5,6 +5,7 @@ import {
   applyClahe,
   applyLumaUnsharp,
   scoreSharpness,
+  scoreSharpnessGrid,
 } from '@/lib/image-quality';
 
 function makeImage(
@@ -134,5 +135,26 @@ describe('applyLumaUnsharp', () => {
       expect(sharpened[i]).toBe(sharpened[i + 1]);
       expect(sharpened[i + 1]).toBe(sharpened[i + 2]);
     }
+  });
+});
+
+describe('scoreSharpnessGrid', () => {
+  const width = 90;
+  const height = 90;
+  const texture = (x: number, y: number) => ((x >> 1) + (y >> 1)) % 2 === 0 ? 40 : 210;
+
+  it('prefers a frame sharp everywhere over one sharp only at the bottom', () => {
+    const everywhere = makeImage(width, height, texture);
+    const bottomOnly = makeImage(width, height, texture);
+    const soft = boxBlur(boxBlur(bottomOnly, width, height), width, height);
+    // Top two thirds out of focus, bottom third sharp.
+    bottomOnly.set(soft.subarray(0, width * 60 * 4), 0);
+    expect(scoreSharpnessGrid(everywhere, width, height)).toBeGreaterThan(
+      scoreSharpnessGrid(bottomOnly, width, height) * 2,
+    );
+  });
+
+  it('scores a flat frame as zero', () => {
+    expect(scoreSharpnessGrid(makeImage(width, height, () => 128), width, height)).toBe(0);
   });
 });

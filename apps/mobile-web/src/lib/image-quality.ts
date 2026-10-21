@@ -53,6 +53,36 @@ export function scoreSharpness(
   return Math.max(0, sumSquares / count - mean * mean);
 }
 
+/**
+ * Frame score that rewards being sharp everywhere: the geometric mean of the
+ * Laplacian variance of a 3×3 grid. Picking frames by a whole-frame score
+ * favours the in-focus bottom of a tilted screen; this also weighs the top.
+ */
+export function scoreSharpnessGrid(
+  data: Uint8ClampedArray,
+  width: number,
+  height: number,
+  cells = 3,
+): number {
+  if (width < cells * 3 || height < cells * 3 || data.length < width * height * 4) return 0;
+  let logSum = 0;
+  for (let cy = 0; cy < cells; cy++) {
+    for (let cx = 0; cx < cells; cx++) {
+      const x0 = Math.floor((cx * width) / cells);
+      const y0 = Math.floor((cy * height) / cells);
+      const w = Math.floor(((cx + 1) * width) / cells) - x0;
+      const h = Math.floor(((cy + 1) * height) / cells) - y0;
+      const cell = new Uint8ClampedArray(w * h * 4);
+      for (let row = 0; row < h; row++) {
+        const from = ((y0 + row) * width + x0) * 4;
+        cell.set(data.subarray(from, from + w * 4), row * w * 4);
+      }
+      logSum += Math.log(1 + scoreSharpness(cell, w, h));
+    }
+  }
+  return Math.exp(logSum / (cells * cells)) - 1;
+}
+
 /** Stretch each channel between its 0.5% tails, matching the previous pipeline. */
 export function applyAutoLevels(data: Uint8ClampedArray, pixelCount: number): void {
   if (!pixelCount) return;

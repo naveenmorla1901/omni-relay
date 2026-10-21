@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { detectQuad } from '@/lib/quad';
+import { detectQuad, warpPixels } from '@/lib/quad';
 
 type P = [number, number];
 
@@ -58,5 +58,38 @@ describe('detectQuad', () => {
   it('returns null for a flat image', () => {
     const data = new Uint8ClampedArray(320 * 240 * 4).fill(128);
     expect(detectQuad({ data, width: 320, height: 240 } as ImageData)).toBeNull();
+  });
+});
+
+describe('warpPixels', () => {
+  const w = 64;
+  const h = 48;
+  const data = new Uint8ClampedArray(w * h * 4);
+  for (let p = 0; p < w * h; p++) {
+    const v = (p % w) < w / 2 ? 20 : 230;
+    data[p * 4] = data[p * 4 + 1] = data[p * 4 + 2] = v;
+    data[p * 4 + 3] = 255;
+  }
+  const src = { data, width: w, height: h };
+
+  it('reproduces the source exactly for an axis-aligned quad', () => {
+    const out = warpPixels(src, [[0, 0], [w - 1, 0], [w - 1, h - 1], [0, h - 1]])!;
+    expect(out.width).toBe(w - 1);
+    for (let x = 0; x < out.width; x++) expect(out.data[(10 * out.width + x) * 4]).toBe(data[(10 * w + x) * 4]);
+  });
+
+  it('keeps a step edge steep under a half-pixel shift (bicubic, not bilinear)', () => {
+    const out = warpPixels(src, [[0.5, 0], [w - 1.5, 0], [w - 1.5, h - 1], [0.5, h - 1]])!;
+    let steepest = 0;
+    for (let x = 1; x < out.width; x++) {
+      const i = (10 * out.width + x) * 4;
+      steepest = Math.max(steepest, Math.abs(out.data[i] - out.data[i - 4]));
+    }
+    // Bilinear splits the 210-level step into two ~105 steps; Catmull-Rom keeps ~117+.
+    expect(steepest).toBeGreaterThan(112);
+  });
+
+  it('returns null for a degenerate quad', () => {
+    expect(warpPixels(src, [[0, 0], [3, 0], [3, 3], [0, 3]])).toBeNull();
   });
 });

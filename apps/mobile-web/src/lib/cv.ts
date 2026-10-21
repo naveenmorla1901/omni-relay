@@ -2,22 +2,28 @@
  * Web-only capture and image enhancement utilities.
  * Uses Canvas + ImageData — never import this from native code.
  *
- * Pipeline: sharpest live frame → contrast/brightness → auto-levels →
- * CLAHE local contrast → luma-only unsharp mask → JPEG output
+ * Pipeline: sharpest live frame (sharp everywhere, not just the near edge) →
+ * contrast/brightness → auto-levels → CLAHE local contrast → luma-only
+ * unsharp mask → focus recovery (anti-moiré chroma smoothing + defocus-aware
+ * sharpening) → JPEG output
  */
 
 import { CONFIG } from '@/config';
+import { applyFocusRecovery } from '@/lib/focus-recovery';
+import type { FocusReport } from '@/lib/focus-recovery';
 import {
   applyAutoLevels,
   applyClahe,
   applyLumaUnsharp,
-  scoreSharpness,
+  scoreSharpnessGrid,
 } from '@/lib/image-quality';
 
 export type EnhancedCapture = {
   dataUrl: string;
   width: number;
   height: number;
+  /** Side of the frame that measured out of focus (phone tilted toward/away from it). */
+  softEdge: FocusReport['softEdge'];
 };
 
 /**
@@ -30,10 +36,10 @@ export async function captureAndEnhanceVideo(
   const bestFrame = await captureSharpestFrame(video);
   if (!bestFrame) return null;
 
-  const dataUrl = enhanceCanvas(bestFrame);
-  if (!dataUrl) return null;
+  const enhanced = enhanceCanvas(bestFrame);
+  if (!enhanced) return null;
 
-  return { dataUrl, width: bestFrame.width, height: bestFrame.height };
+  return { dataUrl: enhanced.dataUrl, width: bestFrame.width, height: bestFrame.height, softEdge: enhanced.softEdge };
 }
 
 async function captureSharpestFrame(video: HTMLVideoElement): Promise<HTMLCanvasElement | null> {
@@ -61,7 +67,7 @@ async function captureSharpestFrame(video: HTMLVideoElement): Promise<HTMLCanvas
     await waitForVideoFrame(video);
     scoreContext.drawImage(video, 0, 0, scoreWidth, scoreHeight);
     const scoreData = scoreContext.getImageData(0, 0, scoreWidth, scoreHeight);
-    const score = scoreSharpness(scoreData.data, scoreWidth, scoreHeight);
+    const score = scoreSharpnessGrid(scoreData.data, scoreWidth, scoreHeight);
 
     if (score > bestScore) {
       bestScore = score;
@@ -97,7 +103,7 @@ function waitForVideoFrame(video: HTMLVideoElement): Promise<void> {
   });
 }
 
-function enhanceCanvas(source: HTMLCanvasElement): string | null {
+function enhanceCanvas(source: HTMLCanvasElement): { dataUrl: string; softEdge: FocusReport['softEdge'] } | null {
   const width = source.width;
   const height = source.height;
   if (!width || !height) return null;
@@ -140,9 +146,21 @@ function enhanceCanvas(source: HTMLCanvasElement): string | null {
     CONFIG.CAPTURE_UNSHARP_AMOUNT,
     CONFIG.CAPTURE_UNSHARP_THRESHOLD,
   );
+  const focus = applyFocusRecovery(
+    imageData.data,
+    width,
+    height,
+    {
+      fineAmount: CONFIG.CAPTURE_FOCUS_FINE,
+      coarseAmount: CONFIG.CAPTURE_FOCUS_COARSE,
+      overshoot: CONFIG.CAPTURE_FOCUS_OVERSHOOT,
+      chromaSigma: CONFIG.CAPTURE_CHROMA_SIGMA,
+    },
+    CONFIG.FOCUS_SOFT_EDGE_SPREAD,
+  );
   context.putImageData(imageData, 0, 0);
 
-  return canvas.toDataURL('image/jpeg', CONFIG.CAPTURE_JPEG_QUALITY);
+  return { dataUrl: canvas.toDataURL('image/jpeg', CONFIG.CAPTURE_JPEG_QUALITY), softEdge: focus.softEdge };
 }
 
 function setFilter(context: CanvasRenderingContext2D, value: string): void {

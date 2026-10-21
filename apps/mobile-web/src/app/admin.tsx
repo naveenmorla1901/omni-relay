@@ -30,13 +30,25 @@ import { useSessionStore } from '@/store/session';
 
 type DeletePrompt = { kind: 'capture'; id: string } | { kind: 'all' };
 
+type SoftEdge = 'top' | 'bottom' | 'left' | 'right';
+
 type CapturedFrame = {
   id: string;
   ts: number;
   dataUrl: string;
   width: number;
   height: number;
+  /** Side that measured out of focus, in this frame's (rotated) orientation. */
+  softEdge?: SoftEdge | null;
 };
+
+const CW_EDGE: Record<SoftEdge, SoftEdge> = { top: 'right', right: 'bottom', bottom: 'left', left: 'top' };
+
+function rotateEdge(edge: SoftEdge | null, rotation: FeedRotation): SoftEdge | null {
+  let turned = edge;
+  for (let turn = 0; turned && turn < rotation / 90; turn++) turned = CW_EDGE[turned];
+  return turned;
+}
 
 export default function AdminScreen() {
   return (
@@ -81,6 +93,7 @@ async function captureFromVideo(video: HTMLVideoElement, rotation: FeedRotation)
     dataUrl: await rotateImage(capture.dataUrl, rotation),
     width: sideways ? capture.height : capture.width,
     height: sideways ? capture.width : capture.height,
+    softEdge: rotateEdge(capture.softEdge, rotation),
   };
 }
 
@@ -652,6 +665,13 @@ function AdminWorkspace() {
                         {wasCropped ? '  · Cropped' : quadProcessing ? '  · Detecting…' : detectedCorners ? '  · Screen detected' : '  · No screen detected'}
                         {downloadStatus ? `  · ${downloadStatus}` : ''}
                       </ThemedText>
+                      {activeCapture.softEdge ? (
+                        <ThemedText type="small" style={{ fontSize: 12, color: theme.warning }}>
+                          The {activeCapture.softEdge} of the screen was out of focus, so it was sharpened extra. For
+                          crisper text there, hold the phone parallel to the monitor, or step back a little: the
+                          {' '}{activeCapture.softEdge} edge is farther from the camera than its depth of focus.
+                        </ThemedText>
+                      ) : null}
                       {!quadProcessing && !detectedCorners && !wasCropped && (
                         <ThemedText type="small" themeColor="textSecondary" style={{ fontSize: 12 }}>
                           No screen found. Try a straighter angle or press Re-lock on the Recorder, then Detect again.

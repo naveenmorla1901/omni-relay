@@ -18,7 +18,7 @@ const EXTRA_ACCESS_KEYS = (process.env.EXPO_PUBLIC_ACCESS_KEYS ?? '')
 export const ACCESS_KEYS = Array.from(new Set([ACCESS_KEY, ...EXTRA_ACCESS_KEYS]));
 
 /** Shown in every role's top bar so stale tabs/APKs are obvious. Bump with each `v*` tag. */
-export const APP_BUILD = 'v0.1.11';
+export const APP_BUILD = 'v0.1.12';
 
 export const CONFIG = {
   /** Low FPS is intentional: preserve pixels for photographed text. Encoder cap only. */
@@ -59,6 +59,23 @@ export const CONFIG = {
   CAPTURE_CLAHE_TILES: 8,
   CAPTURE_CLAHE_CLIP_LIMIT: 2.2,
   CAPTURE_CLAHE_STRENGTH: 0.55,
+  /**
+   * Focus recovery (lib/focus-recovery.ts): a tilted phone leaves the far edge
+   * of the screen out of focus. Blurry tiles get extra fine + coarse luma
+   * sharpening; overshoot is clamped to the local range so there are no halos.
+   * Tuned on 4K device captures: top-band edge sharpness 0.64 → 0.80.
+   */
+  CAPTURE_FOCUS_FINE: 0.5,
+  CAPTURE_FOCUS_COARSE: 1.2,
+  CAPTURE_FOCUS_OVERSHOOT: 3,
+  /** Chroma-only blur that removes screen moiré colour without touching text. */
+  CAPTURE_CHROMA_SIGMA: 2.5,
+  /** Lighter pass after the perspective warp, which resamples (and stretches the far edge). */
+  CROP_FOCUS_FINE: 0.25,
+  CROP_FOCUS_COARSE: 0.5,
+  CROP_FOCUS_OVERSHOOT: 0,
+  /** Report a soft edge when its tiles lack this much sharpness versus the opposite edge. */
+  FOCUS_SOFT_EDGE_SPREAD: 0.15,
   JPEG_WEBP_QUALITY: 0.95,
   /** Projector stage: rendered at the Projector's physical pixels, capped here. */
   STAGE_MAX_LONG_SIDE: 2560,
