@@ -60,7 +60,7 @@ For the sharpest text, hold the Recorder phone square to the screen: when it is 
 
 Holding the Recorder phone sideways? Use **Rotate** (0° / 90° / 180° / 270°) above the Admin live feed; captures come out with the same rotation.
 
-> The deployed relay expires rooms 30 minutes after creation. Admin says so when it happens — start a new session and enter the new code.
+> Sessions last as long as Admin stays open. The relay expires rooms after 30 minutes, so Admin quietly moves the session to a new room every 25 minutes; connected devices follow on their own and only the code shown on Admin changes. Use the current code for any device you add later.
 
 ## Requirements
 
