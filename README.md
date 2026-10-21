@@ -43,17 +43,19 @@ All devices must open the HTTPS URL and enter the access key first.
 
 1. Open the web app on the projector screen → **Projector**.
 2. Enter the same 6-character code and press **Connect**.
-3. The screen turns full-screen black and waits for content. Tap it for Full screen, Disconnect, or local drop/paste.
+3. The screen turns full-screen black and says **Connected to Admin**. Tap it for Full screen, Disconnect, the build number, or local drop/paste. If it says Admin is not answering, reload the Admin page so it runs the same version.
 
 ### 4 — Admin: capture and compose the Projector screen
 
 1. Once the Recorder is live, press **Capture still** to grab the sharpest of five frames, enhanced for text.
 2. The captured image appears in the gallery — tap any thumbnail to select it.
-3. In **Projector screen** (the phone-shaped frame, matching the Projector's real shape), press **Use capture**, or drop, paste, or choose any image. Drag to move; scroll, pinch, or use the slider to zoom; Fit/Fill/↻ 90° adjust it.
-4. Type or paste text into the Text box; set size, color, or code font, and pick **Drag moves: Text** to position it.
-5. Change **Shape** or **Direction** (portrait/landscape) as needed. With **Live** on, every change appears on the Projector; **Clear screen** blanks it.
+3. In **Projector screen** (the phone frame, matching the Projector's real shape), drop an image anywhere on the panel, press **Choose from files**, paste, or press **Use selected capture**. Drag to move; scroll or pinch to zoom toward the pointer, or use −/+ and the slider; **Fit**, **Fill**, **Center**, and **↻ 90°** reshape it; double-click switches Fit/Fill.
+4. Type or paste text or code into the Text box — it appears on the Projector as you type. Set size, color, or code font; drag the text on the phone to place it.
+5. Everything is live — there is no Send button. The status line reads **showing on the Projector** once the phone confirms a frame. **Upright/Sideways** turns the frame, **Black/White** sets the background, and **Clear Projector** blanks it.
 
-> Room codes expire after 30 minutes. Start a new session if the code times out.
+The Recorder keeps its screen on while connected. If the phone sleeps or the network drops, the Recorder and Projector reconnect with the same code on their own.
+
+> The deployed relay expires rooms 30 minutes after creation. Admin says so when it happens — start a new session and enter the new code.
 
 ## Requirements
 

@@ -29,9 +29,10 @@ The URL is baked into `apps/mobile-web/src/config/index.ts` as `SIGNALING_WS_URL
 - Admin sends `{ t: 'create' }` → receives a 6-char room code.
 - Recorder/Projector send `{ t: 'join', code, role }` → server notifies Admin.
 - SDP offers/answers are relayed via `{ t: 'sdp', to, sdp, kind }`.
-- Link B (Admin ↔ Projector stage) rides the same `sdp` forward with `kind: 'stage'`: the Projector sends `viewport`, Admin sends `stage-frame` / `stage-clear` (JSON in the `sdp` field).
+- Link B (Admin ↔ Projector stage) rides the same `sdp` forward with `kind: 'stage'`: the Projector sends `viewport` (on connect and every 15 s) and `stage-ack`; Admin sends `stage-ready`, `stage-frame`, and `stage-clear` (JSON in the `sdp` field). The live relay forwards 8 MB messages (measured 2026-10-21).
 - `{ t: 'push', data, mime }` exists in current `server.js`, but the deployed relay predates it and silently drops it, so the app no longer sends it.
-- Rooms expire after 30 minutes. Confusable characters (0/O, 1/I/L) are excluded from codes.
+- The deployed relay expires rooms 30 minutes after creation; current `server.js` expires them after 30 idle minutes. Confusable characters (0/O, 1/I/L) are excluded from codes.
+- Current `server.js` also ignores the late close of a socket whose role slot was already taken by a rejoin. The deployed relay does not, so clients self-heal by rejoining. Redeploy `services/signaling` on Railway to pick up both fixes (no client change needed).
 
 The server never sees WebRTC media. Stage frames are base64 JPEGs inside the `sdp` field, forwarded verbatim to the other peer.
 

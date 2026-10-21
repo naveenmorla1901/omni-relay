@@ -5,11 +5,11 @@
 > this file disagree on progress, this file wins; when they disagree on architecture, the plan wins
 > unless a decision is recorded below.
 
-**Last updated:** 2026-10-20
-**Current milestone:** M0–M5 complete (web + Android APK v0.1.8 released; v0.1.9 Projector stage building). Device-testing backlog implemented: 4K/detail camera tuning, robust quad detection, auto-fit with Undo, 1–4× zoom, capture Download, camera-flip mirror sync, Projector drag/drop + paste. Follow-up: Admin capture delete/clear and a Recorder physical rear-lens picker (Auto 4K, Ultra-wide, Main · high quality, Telephoto when exposed). The 2026-10-20 quality pass adds sharpest-frame capture, CLAHE, luma-only sharpening, a 16 Mbps ceiling, and a 1080p text floor for explicit lenses. v0.1.8 fixes the native 720p reset and handheld blur. v0.1.9 adds the full-screen Projector and the Admin phone-shaped stage over the relay's `sdp` forward.
-**Current stop point:** Projector stage implemented, pushed (`2704457`), and tagged v0.1.9. The Projector goes full-screen when connected, keeps the screen awake, and reports its viewport; Admin composes a phone-shaped stage with the Projector's exact aspect and sends frames rendered at its physical pixels. Link B rides the relay's `sdp` forward because the deployed relay drops `push`. Capture now keeps the sharpest of five frames. User confirmed v0.1.8 camera quality is good on device. Checks: typecheck, lint, 47 tests, web export green; Admin↔Projector verified in Chrome against the live relay.
-**Next action:** Install APK v0.1.9. Open the Projector on a phone, confirm the Admin frame matches its shape, then test drop/paste/choose image, pinch and wheel zoom, Fit/Fill, text, direction, and Clear screen. Recheck 4K Recorder capture with sharpest-of-5.
-**As of commit:** `2704457` (Projector stage + full-screen Projector, tagged v0.1.9 with the docs commit)
+**Last updated:** 2026-10-21
+**Current milestone:** M0–M5 complete (web + Android APK v0.1.9 released; v0.1.10 building). v0.1.10 answers the v0.1.9 device test: always-live phone-shaped Admin stage with an image-editor toolbar, compact Admin session bar with a big live feed, Admin↔Projector handshake + frame acks, and Recorder/Projector auto-reconnect (Recorder stays awake and restarts its camera after the phone wakes).
+**Current stop point:** v0.1.10 implemented (`2adfb30`). Diagnosis of the v0.1.9 report: the "Send to Projector" button and "Language" field the user saw exist only in pre-v0.1.9 Admin code, so that Admin was a stale tab/APK still sending `push`, which the live relay drops — the Projector waited forever and Admin claimed "Sent". The live relay itself forwards 8 MB stage frames fine (measured). Now Admin answers each Projector `viewport` with `stage-ready`, the Projector acks every decoded frame with `stage-ack`, and both show the truth (Projector: "Admin is not answering — reload Admin"; Admin: "showing on the Projector" or "not confirmed"). Every role shows its build (`APP_BUILD`). Checks: typecheck, lint, 52 tests, web export green; Admin↔Projector verified in Chrome against the live relay (live typing, image drop, Fill/zoom, Projector socket drop → silent rejoin → new frame shown, Projector leave).
+**Next action:** Install APK v0.1.10 on the phones and reload the Admin page (top bar must read v0.1.10). Check: typing in Admin appears live on the Projector phone; drop/choose an image and use zoom/Fit/Fill; turn the Recorder screen off and on again and confirm the feed resumes by itself.
+**As of commit:** `2adfb30` (always-live stage, Projector handshake, auto-reconnect; tagged v0.1.10 with the docs commit)
 **Blocker:** none for Link B — the deployed relay drops `push`, so the Projector stage rides the relay's `sdp` forward (`kind: 'stage'`), verified live. Real-device verification of the quality/lens/delete work is still pending. `react-native-webrtc` ignores advanced focus/exposure constraints on native, so Re-lock is only best-effort there; manual ISO/shutter/focus and native still-photo capture need a Vision Camera/Camera2 path. Some Android builds expose only one logical rear camera, and some explicit lenses only support 720p, so Ultra-wide may remain unavailable or be rejected by the text floor.
 
 ## How to update this file
@@ -66,6 +66,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] `contentHint='detail'` on web video track for sharper WebRTC encoding
 - [x] Camera settings display (resolution × fps · facingMode) in Recorder UI
 - [x] Recorder shows connection status chip and camera controls (Re-lock, Flip, Stop/Start)
+- [x] Recorder stays awake while connected (keep-awake) and restarts the camera when the phone wakes or the track ends; the new track replaces the old one on Link A
 - [ ] Battery guard: pause camera/encoder when app backgrounds
 
 ### M3 — Admin capture + gallery
@@ -90,12 +91,15 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] Image push via WS relay (`push` message type in server.js + signal-ws.ts) — superseded: the deployed relay drops `push`
 - [x] Projector stage over the relay's `sdp` forward (`kind: 'stage'`): `viewport` (Projector → Admin), `stage-frame` / `stage-clear` (Admin → Projector); verified against the live relay
 - [x] Projector full-screen when connected: black stage, keep-awake, status bar hidden, tap for Full screen / Disconnect / local drop-paste
-- [x] Admin phone-shaped stage (`components/projector-stage.web.tsx`): exact Projector aspect, drop/paste/choose image or use capture, drag to move, wheel/pinch/slider zoom, Fit/Fill/rotate/remove, typed or pasted text (size, color, code font), shape presets, portrait/landscape direction, black/white background, Live auto-send + Send now + Clear screen
+- [x] Admin phone-shaped stage (`components/projector-stage.web.tsx`): phone body with camera cut-out at the Projector's exact aspect, always live (no Send/Live toggle), drop anywhere on the panel or Choose from files / paste / use selected capture, drag to move with automatic text-vs-image picking, zoom toward cursor or pinch, −/+ and slider, Fit/Fill/Center/rotate/remove, double-click Fit↔Fill, typed or pasted text (size, color, code font, no language needed), Upright/Sideways, black/white background, Clear Projector
 - [x] Projector reassembles data-URL and renders image full-screen
 - [x] Projector keeps last image until next push
 - [x] Projector manual input (web): drag & drop image files, "Choose image…" picker, Ctrl+V image/code; local-only, no upload
 - [x] Projector local content is clearly labeled with "Show Admin content" / "Clear local content" controls; paste into the room-code field is ignored
-- [x] Admin content reaches the Projector only from the stage (Live toggle or Send now), never automatically on capture
+- [x] Admin content reaches the Projector only from the stage (always live), never automatically on capture
+- [x] Admin↔Projector handshake: Admin answers `viewport` with `stage-ready`; Projector acks frames with `stage-ack`; Projector warns when no current Admin answers, Admin warns when a frame is not confirmed
+- [x] Projector double-buffers frames (decode hidden, then swap) so live typing never flashes black
+- [x] Projector heartbeat (viewport every 15 s) and rejoin when Admin stops answering
 - [x] Right pane shows LINK B · READY / WAITING status
 - [ ] Code push from Admin (M7 — needs OCR/render pipeline first); local paste already displays code on the Projector
 - [ ] WebRTC data channel + chunking for large images (if WS relay becomes a bottleneck)
@@ -146,12 +150,14 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 
 ### M9 — Resilience, polish, packaging
 
-- [ ] Heartbeats and auto-reconnect
+- [x] Auto-reconnect: Recorder/Projector rejoin the same room with backoff when the relay socket drops or the app returns to the foreground; Recorder re-offers Link A on ICE failure (4 s grace on `disconnected`) and on an unanswered offer; Admin builds a fresh peer connection per offer
+- [~] Heartbeats: Projector viewport heartbeat only; no Link A heartbeat
 - [ ] Status UI and session PIN
-- [ ] Full responsive Admin polish
+- [~] Admin layout: compact session bar, full-width workspace, live feed sized to the window on the left, phone stage on the right; stacked below 1000 px
 - [x] Web deploy workflow (GitHub Pages, auto on push to main)
 - [x] GitHub Actions Android APK workflow (`build-android.yml` — `assembleRelease` + debug keystore, triggers on `v*` tag or manual)
-- [~] APK v0.1.9 release — full-screen Projector + Admin phone-shaped stage; GitHub Actions build/publish and device test pending
+- [~] APK v0.1.10 release — always-live stage, handshake/acks, auto-reconnect, Recorder keep-awake; GitHub Actions build and device test pending
+- [x] APK v0.1.9 release — full-screen Projector + Admin phone-shaped stage; device test found the stale-Admin and Recorder-sleep issues fixed in v0.1.10
 - [x] APK v0.1.8 release — native 720p-reset fix + 30 fps capture; built by GitHub Actions, camera quality confirmed on device
 - [x] APK v0.1.7 release — tagged from `f890fba`; superseded by v0.1.8
 - [x] APK v0.1.6 published to GitHub Releases — built from `01a7a59`; superseded by v0.1.7
@@ -175,12 +181,12 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 
 - [x] Admin: left pane (flex:2) live feed + gallery + captured image preview
 - [x] Admin: right pane is the phone-shaped Projector stage
-- [x] Admin: session panel with room code display and per-device status chips
+- [x] Admin: compact session bar — room code, Recorder/Projector chips, build, End session, Lock
 - [x] Admin: gallery thumbnail strip (horizontal scroll, max 20 captures)
 - [x] Admin: per-capture Delete, per-thumbnail Delete, and Clear all with a confirmation modal. Deleting the active frame selects the next capture or clears the preview and cancels in-flight detection/crop.
 - [x] Admin: large captured image preview with rotate CCW/CW + 1–4× zoom
 - [x] Admin: Download, Detect again, Auto-crop toggle, Undo crop
-- [x] Admin: Image / Code tabs in send pane; send is explicit user action
+- [x] Admin: no Send button — the stage is always live
 - [x] Admin: LINK B READY/WAITING status in right pane header
 - [x] Projector: 6-char code entry → true full-screen stage that mirrors Admin's phone frame
 - [x] Projector: drag/drop + file picker + paste image/code, visible even before joining (web); native shows a web-only hint
@@ -198,7 +204,7 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [x] iOS personal use: add GitHub Pages URL to Safari home screen as PWA
 - [x] Android APK CI: `assembleRelease` + debug-keystore signing; triggers on `v*` tag
 - [x] APK v0.1.6 live at `github.com/naveenmorla1901/omni-relay/releases/latest` (superseded by the v0.1.7 build)
-- [~] APK v0.1.9 Projector stage build — GitHub Actions publish pending
+- [~] APK v0.1.10 build — GitHub Actions publish pending
 - [x] Download APK button on home screen links to latest release
 - [ ] Android keystore + signed release APK (for Play Store / wider distribution)
 
@@ -207,7 +213,11 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **Serverless:** no cloud backend, media server, or database. Static GitHub Pages for web; signaling relay for room codes + Link B stage frames only; media stays P2P.
 - **Pairing:** room codes via WebSocket signaling relay. QR/copy-paste path removed from primary UI.
 - **Signaling server:** plain JS (`server.js`) on Railway, root dir `services/signaling`, `node server.js`, PORT=8081.
-- **Link B transport:** via the existing WS relay connection, not a second WebRTC session. Originally the `push` message; since 2026-10-20 the relay's `sdp` forward with `kind: 'stage'`, because the deployed relay drops `push`. Single message, no chunking — stage JPEGs are ≤ ~1 MB.
+- **Link B transport:** via the existing WS relay connection, not a second WebRTC session. Originally the `push` message; since 2026-10-20 the relay's `sdp` forward with `kind: 'stage'`, because the deployed relay drops `push`. Single message, no chunking — stage JPEGs are ≤ ~1 MB and the live relay forwards 8 MB (measured 2026-10-21).
+- **Stage handshake (2026-10-21):** `stage-ready` (Admin → Projector, answering `viewport`) and `stage-ack` (Projector → Admin, frame id) are new v1 stage messages. They make a stale Admin visible instead of silent, and let the Projector detect a lost relay slot and rejoin.
+- **Always-live stage:** no Send button or Live toggle; every settled edit (250 ms debounce) and every Projector rejoin sends the current frame. Shape presets were removed: the stage is the Projector phone's real shape, Upright or Sideways.
+- **Auto-reconnect:** Recorder/Projector keep their room code and rejoin silently (1 s → 15 s backoff). A Recorder whose P2P link is still connected does not re-offer after a socket-only drop. The deployed relay deletes a role's slot when *any* socket of that role closes, so a dead socket closing late can evict its replacement; the client self-heals (unanswered offer → rejoin; Projector heartbeat without `stage-ready` → rejoin). `server.js` now ignores such late closes and expires rooms after 30 idle minutes, effective on the next relay redeploy.
+- **Build label:** `APP_BUILD` in `config/index.ts` is shown in every role and must be bumped with each `v*` tag.
 - **Projector naming:** UI uses **Projector**; wire role stays `display`.
 - **Access key:** client-side gate only; `ACCESS_KEY` in `config/index.ts`; not a security boundary.
 - **GitHub Pages base path:** `EXPO_BASE_URL=/omni-relay` injected by deploy workflow.
@@ -258,6 +268,16 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - [~] Admin: delete individual pictures and clear the gallery for a clearer view. Per-capture Delete, per-thumbnail Delete, and Clear all are implemented with confirmation; live web bundle verified, interactive browser test pending.
 - [~] Recorder: access wide-angle and high-quality lenses. Physical rear-lens picker implemented: Auto (4K preferred), Ultra-wide, Main · high quality, Telephoto, and numbered Android cameras when exposed; failed switches fall back to Auto, and explicit lenses below 1080p now restore Auto with an explanation. APK v0.1.7 build is pending; needs Android/iOS device test.
 
+## Requested backlog (2026-10-21, from the v0.1.9 device test)
+
+- [x] Projector showed "Connected… waiting" while Admin said "Sent": the Admin was a stale pre-v0.1.9 build (its Send to Projector button and Language field no longer exist) still sending `push`. Fixed by the handshake/acks and the visible build label. **Reload Admin to v0.1.10.**
+- [x] Admin stage looked like a monitor: now a phone body (rounded, camera cut-out, side buttons) at the Projector's real shape.
+- [x] No Send button: the stage is always live, including typed text; no language field.
+- [x] Image from files: drop anywhere on the stage panel, Choose from files button inside the empty phone, paste, or use the selected capture.
+- [x] Easier image editing: zoom toward cursor/pinch, −/+ buttons and slider, Fit / Fill / Center / rotate, double-click Fit↔Fill.
+- [x] Big session box removed: compact session bar; live feed takes the left, the phone stage the right.
+- [~] Recorder stopped after the phone screen went off: keep-awake while connected, camera restart on wake, Link A re-offer and room rejoin. **Needs device verification.**
+
 ## Session log
 
 - **2026-10-19** — M0 scaffold: Expo workspace, role routes, protocol/config modules, tests, lint, web export, access-key gate, GitHub Actions CI.
@@ -274,5 +294,6 @@ Legend: `[x]` done · `[~]` in progress/partial · `[ ]` not started · `[!]` bl
 - **2026-10-20** — Pushed `b9f9354` (code) + `d66f92a` (docs); CI and Deploy web green. Tagged `v0.1.5`; the Android workflow built and published `ClearRelay-v0.1.5.apk` (135 MB). Railway relay redeploy still pending.
 - **2026-10-20** — Admin delete/clear + physical lens picker: added per-capture Delete, per-thumbnail Delete, and Clear all with a confirmation modal; deleting the active frame selects the next or clears the preview and cancels in-flight detection/crop. Added `src/camera/lenses.ts` + tests to classify iPhone/Android lens labels and a Recorder lens picker (Auto 4K preferred, Ultra-wide, Main · high quality, Telephoto, numbered Android cameras). Added `setFacingMode`/`deviceId` to camera settings, mapped native `facing`, avoided the web enumerateDevices probe while streaming, and fall back to Auto if a lens switch fails. Checks: typecheck, lint, 26 tests, web export green. Code commit `01a7a59`.
 - **2026-10-20** — Pushed `214e9a5` (docs); CI and Deploy web green. Live bundle verified to contain the new Admin Delete/Clear all and Recorder Camera lens / Auto 4K / Ultra-wide / high-quality UI. Tagged `v0.1.6` at `01a7a59`; the Android workflow built and published `ClearRelay-v0.1.6.apk` (135,044,026 bytes). Railway relay redeploy and real-device verification still pending.
+- **2026-10-21** — v0.1.9 device-test fixes: found the "nothing sent" report came from a stale Admin build; added `stage-ready`/`stage-ack`, Projector double-buffer + heartbeat, `APP_BUILD` labels, always-live phone stage with image-editor toolbar, compact Admin bar with a big live feed, Recorder/Projector auto-reconnect, Recorder keep-awake + camera restart, Admin fresh connection per offer, relay late-close/idle-expiry fixes (pending redeploy). Measured live relay forwarding 8 MB frames. Checks: typecheck, lint, 52 tests, web export green; Admin↔Projector rejoin verified in Chrome. Code commit `2adfb30`.
 - **2026-10-20** — Projector stage: confirmed the live relay silently drops `push` (Projector stuck on "Waiting for content"). Link B now uses the relay's `sdp` forward with `kind: 'stage'`. Projector goes full-screen and reports its viewport; Admin composes a phone-shaped stage (image drag/zoom/fit/fill/rotate, text, shape, direction, background) rendered at the Projector's physical pixels and sent live. Capture now keeps the sharpest of five frames. Checks: typecheck, lint, 47 tests, web export green; Admin↔Projector verified in Chrome against the live relay.
 - **2026-10-20** — Capture-quality pass from 12 downloaded samples. Found six captures: three at 2160×3840 (readable but soft/moiré) and three explicit-lens captures at 528×960/720×1280 (unrecoverable). Added sharpest-of-3 capture, CLAHE, luma-only unsharp mask, JPEG 97, a 16 Mbps encoder ceiling, and encoder-param reapplication after native lens replacement. Added a 1080p text floor: explicit lenses below it restore Auto with an explanation, and both Recorder and Admin warn on low-resolution streams. Fixed the web VideoView ref callback identity so Admin resolution tracking cannot loop. Checks: typecheck, lint, 33 tests, web export green. Code commit `f890fba`; APK v0.1.7 pending.
